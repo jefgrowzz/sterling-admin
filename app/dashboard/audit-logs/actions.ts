@@ -1,0 +1,65 @@
+"use server";
+
+import { supabaseAdmin } from "@/lib/supabase/server";
+
+export type AuditCategory = "moderation" | "admin" | "security" | "system";
+
+export type AuditLogEntry = {
+  id: string;
+  category: AuditCategory;
+  action: string;
+  actor_label: string | null;
+  target_type: string | null;
+  target_id: string | null;
+  detail: string | null;
+  created_at: string;
+};
+
+const AUDIT_PAGE_SIZE = 5;
+
+export async function fetchAuditLogs(
+  page: number,
+  category?: AuditCategory
+): Promise<{ logs: AuditLogEntry[]; totalCount: number }> {
+  const offset = (page - 1) * AUDIT_PAGE_SIZE;
+
+  let countQuery = supabaseAdmin
+    .from("audit_logs")
+    .select("id", { count: "exact", head: true });
+
+  let dataQuery = supabaseAdmin
+    .from("audit_logs")
+    .select("id,category,action,actor_label,target_type,target_id,detail,created_at")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + AUDIT_PAGE_SIZE - 1);
+
+  if (category) {
+    countQuery = countQuery.eq("category", category);
+    dataQuery = dataQuery.eq("category", category);
+  }
+
+  const [{ count }, { data, error }] = await Promise.all([countQuery, dataQuery]);
+  if (error) throw new Error(error.message);
+
+  return { logs: data ?? [], totalCount: count ?? 0 };
+}
+
+export async function fetchAuditLogCounts(): Promise<Record<AuditCategory | "all", number>> {
+  const categories: AuditCategory[] = ["moderation", "admin", "security", "system"];
+
+  const [allRes, ...categoryRes] = await Promise.all([
+    supabaseAdmin.from("audit_logs").select("id", { count: "exact", head: true }),
+    ...categories.map((category) =>
+      supabaseAdmin
+        .from("audit_logs")
+        .select("id", { count: "exact", head: true })
+        .eq("category", category)
+    ),
+  ]);
+
+  const counts = { all: allRes.count ?? 0 } as Record<AuditCategory | "all", number>;
+  categories.forEach((category, i) => {
+    counts[category] = categoryRes[i].count ?? 0;
+  });
+  return counts;
+}
