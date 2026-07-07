@@ -18,24 +18,21 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { href: "/dashboard", label: "Overview", short: "OV", description: "Live platform pulse" },
       { href: "/dashboard/analytics", label: "Analytics", short: "AN", description: "Growth and quality trends" },
       { href: "/dashboard/audit-logs", label: "Audit Logs", short: "AL", description: "Admin activity history" },
-      { href: "/dashboard/notifications", label: "Notifications", short: "NO", description: "Push to all users" },
     ],
   },
   {
     label: "Community",
     items: [
-      { href: "/dashboard/users", label: "Users", short: "US", description: "Profiles and account controls" },
+      { href: "/dashboard/users", label: "Users", short: "US", description: "Profiles, cheats, and notifications" },
       { href: "/dashboard/communities", label: "Communities", short: "CM", description: "Groups, visibility, owners" },
       { href: "/dashboard/events", label: "Events", short: "EV", description: "Meetups and gatherings" },
-      { href: "/dashboard/cheats", label: "Cheats", short: "CH", description: "Engagement boost tools" },
     ],
   },
   {
     label: "Trust",
     items: [
-      { href: "/dashboard/flagged-accounts", label: "Flagged Accounts", short: "FA", description: "Reported abuse and bot signals" },
+      { href: "/dashboard/flagged-accounts", label: "Trust & Safety", short: "TS", description: "Flagged accounts, reports, and bans" },
       { href: "/dashboard/moderation", label: "Moderation", short: "MO", description: "Reports and removals" },
-      { href: "/dashboard/banned-users", label: "Banned Users", short: "BU", description: "Banned accounts and devices" },
     ],
   },
 ];

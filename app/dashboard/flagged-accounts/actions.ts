@@ -3,6 +3,16 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import type { Report } from "@/lib/types";
 import { strikeUser as strikeUserAction, banUser as banUserAction } from "@/app/dashboard/moderation/actions";
+import {
+  fetchActiveBans as fetchActiveBansAction,
+  fetchActiveDeviceBans as fetchActiveDeviceBansAction,
+  unbanUser as unbanUserAction,
+  type ActiveBan,
+  type ActiveDeviceBan,
+  type BanType,
+} from "@/app/dashboard/banned-users/actions";
+
+export type { ActiveBan, ActiveDeviceBan, BanType };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -251,6 +261,9 @@ export async function dismissSuspicion(userId: string, dismissedBy?: string): Pr
 
 export const strikeUser = strikeUserAction;
 export const banUser = banUserAction;
+export const fetchActiveBans = fetchActiveBansAction;
+export const fetchActiveDeviceBans = fetchActiveDeviceBansAction;
+export const unbanUser = unbanUserAction;
 
 // ---------------------------------------------------------------------------
 // Data — reported posts

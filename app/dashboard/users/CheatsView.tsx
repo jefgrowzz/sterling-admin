@@ -11,7 +11,7 @@ import {
   type PostItem,
   type ProfileItem,
   type CommunityItem,
-} from "./actions";
+} from "@/app/dashboard/cheats/actions";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -516,10 +516,10 @@ function CommunityCardSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Page
+// View
 // ---------------------------------------------------------------------------
 
-export default function CheatsPage() {
+export function CheatsView() {
   const [tab, setTab] = useState<"posts" | "profiles" | "communities">("posts");
   const [rawSearch, setRawSearch] = useState("");
   const [search, setSearch] = useState("");
