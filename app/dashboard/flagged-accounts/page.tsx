@@ -1,180 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabaseAdmin } from "@/lib/supabase/server";
 import type { Report } from "@/lib/types";
 import { Tabs } from "@/components/dashboard/Tabs";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Pagination } from "@/components/ui/Pagination";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type FlaggedUser = {
-  id: string;
-  email?: string | null;
-  full_name?: string | null;
-  username?: string | null;
-  account_role: string;
-  moderation_strike_count: number;
-  created_at: string;
-};
-
-type Severity = "Critical" | "High" | "Medium" | "Low";
-
-type PostEntry = {
-  id: string;
-  body?: string | null;
-  author_username?: string | null;
-  community_name?: string | null;
-  likes_count?: number | null;
-  comments_count?: number | null;
-  image_urls?: string[] | null;
-  post_type?: string | null;
-};
-
-type ReportedPostEntry = {
-  id: string;
-  category?: string | null;
-  description?: string | null;
-  status?: string | null;
-  review_priority?: string | null;
-  offense_label?: string | null;
-  created_at?: string;
-  post_id?: string | null;
-  post: PostEntry | null;
-};
-
-// ---------------------------------------------------------------------------
-// Data — flagged accounts
-// ---------------------------------------------------------------------------
-
-async function fetchFlaggedProfiles(): Promise<FlaggedUser[]> {
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("id,email,full_name,username,account_role,moderation_strike_count,created_at")
-    .gt("moderation_strike_count", 0)
-    .order("moderation_strike_count", { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((p: any) => ({
-    ...p,
-    account_role: p.account_role ?? "member",
-    moderation_strike_count: p.moderation_strike_count ?? 0,
-  }));
-}
-
-async function fetchUserReports(userId: string): Promise<Report[]> {
-  const { data, error } = await supabaseAdmin
-    .from("reports")
-    .select("id,category,description,status,review_priority,offense_label,created_at,reporter_id,report_type")
-    .eq("reported_user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(15);
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-async function updateStrikes(userId: string, count: number): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("profiles")
-    .update({ moderation_strike_count: count })
-    .eq("id", userId);
-  if (error) throw new Error(error.message);
-}
-
-async function banUser(userId: string, reason?: string): Promise<void> {
-  try {
-    const { error } = await supabaseAdmin.rpc("admin_ban_user", {
-      p_user_id: userId,
-      p_reason: reason || "Violation of platform rules",
-      p_also_ban_devices: true,
-    });
-
-    if (error) {
-      // If RPC doesn't exist, fall back to direct update
-      if (error.message?.includes("function") || error.message?.includes("does not exist")) {
-        console.warn("admin_ban_user RPC not found, falling back to direct update");
-        const { error: updateError } = await supabaseAdmin
-          .from("profiles")
-          .update({
-            account_role: "banned",
-            ban_reason: reason || "Violation of platform rules",
-            banned_at: new Date().toISOString()
-          })
-          .eq("id", userId);
-
-        if (updateError) throw new Error(updateError.message);
-        return;
-      }
-      throw new Error(error.message);
-    }
-  } catch (error: any) {
-    console.error("Ban user error:", error);
-    throw new Error(error.message || "Failed to ban user");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Data — reported posts
-// ---------------------------------------------------------------------------
-
-async function fetchReportedPosts(): Promise<ReportedPostEntry[]> {
-  const { data: reports, error } = await supabaseAdmin
-    .from("reports")
-    .select("id,category,description,status,review_priority,offense_label,created_at,post_id")
-    .not("post_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (error) throw new Error(error.message);
-  if (!reports?.length) return [];
-
-  const postIds = [...new Set((reports as any[]).map((r) => r.post_id).filter(Boolean))];
-  const { data: posts } = await supabaseAdmin
-    .from("posts")
-    .select("id,body,author_username,community_name,likes_count,comments_count,image_urls,post_type")
-    .in("id", postIds);
-
-  const postMap: Record<string, PostEntry> = Object.fromEntries(
-    (posts ?? []).map((p: any) => [p.id, p])
-  );
-
-  return (reports as any[]).map((r) => ({
-    ...r,
-    post: r.post_id ? (postMap[r.post_id] ?? null) : null,
-  }));
-}
-
-async function dismissReport(reportId: string): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("reports")
-    .update({ status: "dismissed", resolved_at: new Date().toISOString() })
-    .eq("id", reportId);
-  if (error) throw new Error(error.message);
-}
-
-async function removePost(reportId: string, postId: string): Promise<void> {
-  const [r1, r2] = await Promise.all([
-    supabaseAdmin.from("reports").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("id", reportId),
-    supabaseAdmin.from("posts").update({ status: "removed" }).eq("id", postId),
-  ]);
-  if (r1.error) throw new Error(r1.error.message);
-  if (r2.error) throw new Error(r2.error.message);
-}
+import {
+  fetchFlaggedAccounts,
+  fetchUserReports,
+  updateStrikes,
+  dismissSuspicion,
+  banUser,
+  fetchReportedPosts,
+  dismissReport,
+  removePost,
+  type FlaggedAccount,
+  type Severity,
+  type ReportedPostEntry,
+} from "./actions";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function getSeverity(strikes: number): Severity {
-  if (strikes >= 5) return "Critical";
-  if (strikes >= 3) return "High";
-  if (strikes >= 2) return "Medium";
-  return "Low";
-}
 
 function getInitials(name?: string | null, username?: string | null): string {
   if (name?.trim()) {
@@ -343,38 +190,56 @@ function PostCardSkeleton() {
 // ---------------------------------------------------------------------------
 
 function ReviewPanel({
-  user,
+  account,
   onClose,
   onStrikesChanged,
+  onSuspicionDismissed,
 }: {
-  user: FlaggedUser;
+  account: FlaggedAccount;
   onClose: () => void;
   onStrikesChanged: (userId: string, newCount: number) => void;
+  onSuspicionDismissed: (userId: string) => void;
 }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [actionState, setActionState] = useState<"idle" | "working" | "error">("idle");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [localStrikes, setLocalStrikes] = useState(user.moderation_strike_count);
+  const [localStrikes, setLocalStrikes] = useState(account.moderationStrikeCount);
+  const [suspicionDismissed, setSuspicionDismissed] = useState(false);
 
-  const severity = getSeverity(localStrikes);
+  const severity = account.severity;
 
   useEffect(() => {
-    fetchUserReports(user.id)
+    fetchUserReports(account.id)
       .then(setReports)
       .catch(console.error)
       .finally(() => setReportsLoading(false));
-  }, [user.id]);
+  }, [account.id]);
 
   async function handleStrikeAction(newCount: number) {
     setActionState("working");
     setActionError(null);
     try {
-      await updateStrikes(user.id, newCount);
+      await updateStrikes(account.id, newCount);
       setLocalStrikes(newCount);
-      onStrikesChanged(user.id, newCount);
-    } catch (e: any) {
-      setActionError(e.message);
+      onStrikesChanged(account.id, newCount);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Action failed");
+      setActionState("error");
+      return;
+    }
+    setActionState("idle");
+  }
+
+  async function handleDismissSuspicion() {
+    setActionState("working");
+    setActionError(null);
+    try {
+      await dismissSuspicion(account.id);
+      setSuspicionDismissed(true);
+      onSuspicionDismissed(account.id);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Action failed");
       setActionState("error");
       return;
     }
@@ -385,17 +250,18 @@ function ReviewPanel({
     setActionState("working");
     setActionError(null);
     try {
-      await banUser(user.id, `Banned from flagged accounts review (strikes: ${user.moderation_strike_count})`);
-      onStrikesChanged(user.id, 0);
+      await banUser(account.id, `Banned from flagged accounts review (strikes: ${account.moderationStrikeCount})`);
+      onStrikesChanged(account.id, 0);
       onClose();
-    } catch (e: any) {
-      setActionError(e.message);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Action failed");
       setActionState("error");
     }
   }
 
-  const initials = getInitials(user.full_name, user.username);
-  const color = avatarColor(user.id);
+  const initials = getInitials(account.full_name, account.username);
+  const color = avatarColor(account.id);
+  const showSuspicion = account.suspicionScore > 0 && !suspicionDismissed;
 
   return (
     <>
@@ -408,15 +274,15 @@ function ReviewPanel({
             </div>
             <div>
               <h2 className="text-base font-semibold text-zinc-50">
-                {user.full_name ?? user.username ?? "Unknown user"}
+                {account.full_name ?? account.username ?? "Unknown user"}
               </h2>
-              <p className="mt-0.5 text-sm text-zinc-500">{user.email ?? "No email"}</p>
+              <p className="mt-0.5 text-sm text-zinc-500">{account.email ?? "No email"}</p>
               <div className="mt-1.5 flex items-center gap-2">
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${SEVERITY_BADGE[severity]}`}>
                   {severity}
                 </span>
                 <span className="text-xs text-zinc-500">
-                  {localStrikes} strike{localStrikes !== 1 ? "s" : ""} · {user.account_role}
+                  {localStrikes} strike{localStrikes !== 1 ? "s" : ""} · {account.account_role}
                 </span>
               </div>
             </div>
@@ -451,6 +317,30 @@ function ReviewPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
+          {showSuspicion && (
+            <div className="mb-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  Suspicion signals · score {account.suspicionScore}
+                </h3>
+                <button
+                  onClick={handleDismissSuspicion}
+                  disabled={actionState === "working"}
+                  className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-[11px] font-medium text-zinc-400 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  Dismiss suspicion flag
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {account.suspicionSignals.map((s, i) => (
+                  <span key={i} className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
             Reports against this user
           </h3>
@@ -502,42 +392,52 @@ function ReviewPanel({
 // Flagged account card
 // ---------------------------------------------------------------------------
 
-function FlaggedCard({ user, onReview }: { user: FlaggedUser; onReview: (u: FlaggedUser) => void }) {
-  const severity = getSeverity(user.moderation_strike_count);
-  const initials = getInitials(user.full_name, user.username);
-  const color = avatarColor(user.id);
+function FlaggedCard({ account, onReview }: { account: FlaggedAccount; onReview: (a: FlaggedAccount) => void }) {
+  const initials = getInitials(account.full_name, account.username);
+  const color = avatarColor(account.id);
 
   return (
     <div className="group rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm transition hover:border-zinc-700 hover:shadow-md">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
           <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${color}`}>
             {initials}
-            <span className={`absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-zinc-900 ${SEVERITY_DOT[severity]}`} />
+            <span className={`absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-zinc-900 ${SEVERITY_DOT[account.severity]}`} />
           </div>
           <div className="min-w-0">
-            <p className="truncate font-semibold text-zinc-50">{user.full_name ?? user.username ?? "Unknown user"}</p>
-            <p className="mt-0.5 truncate text-sm text-zinc-500">{user.email ?? "No email on record"}</p>
+            <p className="truncate font-semibold text-zinc-50">{account.full_name ?? account.username ?? "Unknown user"}</p>
+            <p className="mt-0.5 truncate text-sm text-zinc-500">{account.email ?? "No email on record"}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-              <span>Joined {joinedLabel(user.created_at)}</span>
+              <span>Joined {joinedLabel(account.created_at)}</span>
               <span className="inline-block h-1 w-1 rounded-full bg-zinc-600" />
               <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-                {user.account_role}
+                {account.account_role}
               </span>
             </div>
+            {(account.moderationStrikeCount > 0 || account.suspicionScore > 0) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {account.moderationStrikeCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-900">
+                    {account.moderationStrikeCount} strike{account.moderationStrikeCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+                {account.suspicionScore > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+                    Suspicion score {account.suspicionScore}
+                  </span>
+                )}
+                {account.suspicionSignals.map((s, i) => (
+                  <span key={i} className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-400">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-zinc-900/60">
-              <path fillRule="evenodd" d="M8 1a.75.75 0 01.75.75v5.5a.75.75 0 01-1.5 0v-5.5A.75.75 0 018 1zm0 9a1 1 0 110 2 1 1 0 010-2z" clipRule="evenodd" />
-            </svg>
-            <span className="text-xs font-semibold text-zinc-900">
-              {user.moderation_strike_count} strike{user.moderation_strike_count !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${SEVERITY_BADGE[severity]}`}>{severity}</span>
-          <button onClick={() => onReview(user)} className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800">
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${SEVERITY_BADGE[account.severity]}`}>{account.severity}</span>
+          <button onClick={() => onReview(account)} className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800">
             Review
           </button>
         </div>
@@ -789,60 +689,68 @@ const FLAGGED_PAGE_SIZE = 10;
 
 export default function FlaggedAccountsPage() {
   const [pageView, setPageView] = useState<"accounts" | "posts">("accounts");
-  const [users, setUsers] = useState<FlaggedUser[]>([]);
+  const [accounts, setAccounts] = useState<FlaggedAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [accountsTab, setAccountsTab] = useState("priority");
-  const [reviewing, setReviewing] = useState<FlaggedUser | null>(null);
+  const [severityTab, setSeverityTab] = useState("critical");
+  const [reviewing, setReviewing] = useState<FlaggedAccount | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    fetchFlaggedProfiles()
-      .then(setUsers)
+    fetchFlaggedAccounts()
+      .then(setAccounts)
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
   function handleStrikesChanged(userId: string, newCount: number) {
-    setUsers((prev) =>
+    setAccounts((prev) =>
       prev
-        .map((u) => (u.id === userId ? { ...u, moderation_strike_count: newCount } : u))
-        .filter((u) => u.moderation_strike_count > 0)
-        .sort((a, b) => b.moderation_strike_count - a.moderation_strike_count)
+        .map((a) => (a.id === userId ? { ...a, moderationStrikeCount: newCount } : a))
+        .filter((a) => a.moderationStrikeCount > 0 || a.suspicionScore > 0)
     );
     if (reviewing?.id === userId) {
-      if (newCount === 0) setReviewing(null);
-      else setReviewing((prev) => prev && { ...prev, moderation_strike_count: newCount });
+      if (newCount === 0 && reviewing.suspicionScore === 0) setReviewing(null);
+      else setReviewing((prev) => prev && { ...prev, moderationStrikeCount: newCount });
     }
   }
 
-  const critical = users.filter((u) => u.moderation_strike_count >= 5);
-  const high     = users.filter((u) => u.moderation_strike_count >= 3 && u.moderation_strike_count < 5);
-  const medium   = users.filter((u) => u.moderation_strike_count === 2);
-  const low      = users.filter((u) => u.moderation_strike_count === 1);
-  const priority = [...critical, ...high];
+  function handleSuspicionDismissed(userId: string) {
+    setAccounts((prev) =>
+      prev
+        .map((a) => (a.id === userId ? { ...a, suspicionScore: 0, suspicionSignals: [] } : a))
+        .filter((a) => a.moderationStrikeCount > 0 || a.suspicionScore > 0)
+    );
+    if (reviewing?.id === userId && reviewing.moderationStrikeCount === 0) setReviewing(null);
+  }
 
-  const accountList = users.filter((u) => {
-    if (accountsTab === "priority") return u.moderation_strike_count >= 3;
-    if (accountsTab === "high")     return u.moderation_strike_count >= 3 && u.moderation_strike_count < 5;
-    if (accountsTab === "medium")   return u.moderation_strike_count === 2;
-    if (accountsTab === "low")      return u.moderation_strike_count === 1;
+  const critical = accounts.filter((a) => a.severity === "Critical");
+  const high     = accounts.filter((a) => a.severity === "High");
+  const medium   = accounts.filter((a) => a.severity === "Medium");
+  const low      = accounts.filter((a) => a.severity === "Low");
+
+  const accountList = accounts.filter((a) => {
+    if (severityTab === "critical") return a.severity === "Critical";
+    if (severityTab === "high")     return a.severity === "High";
+    if (severityTab === "medium")   return a.severity === "Medium";
+    if (severityTab === "low")      return a.severity === "Low";
     return true;
   });
 
   const accountStats = [
-    { title: "Total flagged",  value: loading ? "—" : String(users.length),    change: users.length === 0 ? "none" : "active",   tone: "slate"   as const },
-    { title: "Critical (5+)",  value: loading ? "—" : String(critical.length), change: "immediate",                               tone: "rose"    as const },
-    { title: "Priority (3–4)", value: loading ? "—" : String(high.length),     change: "review today",                            tone: "amber"   as const },
-    { title: "Medium / Low",   value: loading ? "—" : String(medium.length + low.length), change: "monitor",                     tone: "slate"   as const },
+    { title: "Total flagged", value: loading ? "—" : String(accounts.length), change: accounts.length === 0 ? "none" : "active", tone: "slate"   as const },
+    { title: "Critical",      value: loading ? "—" : String(critical.length), change: "immediate",                              tone: "rose"    as const },
+    { title: "High",          value: loading ? "—" : String(high.length),     change: "review today",                           tone: "amber"   as const },
+    { title: "Medium / Low",  value: loading ? "—" : String(medium.length + low.length), change: "monitor",                    tone: "slate"   as const },
   ];
 
   return (
     <>
       {reviewing && (
         <ReviewPanel
-          user={reviewing}
+          account={reviewing}
           onClose={() => setReviewing(null)}
           onStrikesChanged={handleStrikesChanged}
+          onSuspicionDismissed={handleSuspicionDismissed}
         />
       )}
 
@@ -855,7 +763,7 @@ export default function FlaggedAccountsPage() {
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
             {pageView === "accounts"
-              ? "Users with active moderation strikes, ordered by severity. Use the review panel to inspect reports and adjust strikes."
+              ? "Accounts with active moderation strikes and/or rule-based bot signals (device sharing, posting bursts, duplicate content), ordered by combined severity. Use the review panel to inspect reports, signals, and adjust strikes."
               : "Posts reported by users for policy violations. Dismiss false positives or remove content that violates platform rules."}
           </p>
           <div className="mt-5 border-t border-zinc-800 pt-5">
@@ -883,16 +791,16 @@ export default function FlaggedAccountsPage() {
             <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
               <Tabs
                 tabs={[
-                  { id: "priority", label: "Priority",   count: loading ? undefined : priority.length, color: "rose"  },
+                  { id: "critical", label: "Critical",   count: loading ? undefined : critical.length, color: "rose"  },
                   { id: "high",     label: "High",       count: loading ? undefined : high.length,     color: "rose"  },
                   { id: "medium",   label: "Medium",     count: loading ? undefined : medium.length,   color: "amber" },
                   { id: "low",      label: "Low",        count: loading ? undefined : low.length,      color: "blue"  },
-                  { id: "all",      label: "All flagged",count: loading ? undefined : users.length,    color: "amber" },
+                  { id: "all",      label: "All flagged",count: loading ? undefined : accounts.length, color: "amber" },
                 ]}
-                defaultTab="priority"
+                defaultTab="critical"
                 variant="segmented"
                 size="sm"
-                onChange={setAccountsTab}
+                onChange={(id) => { setSeverityTab(id); setCurrentPage(1); }}
               />
 
               <div className="mt-6 space-y-3">
@@ -910,8 +818,8 @@ export default function FlaggedAccountsPage() {
                     );
                     return (
                       <>
-                        {paginatedAccounts.map((user) => (
-                          <FlaggedCard key={user.id} user={user} onReview={setReviewing} />
+                        {paginatedAccounts.map((account) => (
+                          <FlaggedCard key={account.id} account={account} onReview={setReviewing} />
                         ))}
                       </>
                     );

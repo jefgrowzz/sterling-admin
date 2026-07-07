@@ -33,8 +33,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Trust",
     items: [
-      { href: "/dashboard/flagged-accounts", label: "Flagged Accounts", short: "FA", description: "Risky profiles to review" },
-      { href: "/dashboard/suspicious-accounts", label: "Suspicious Accounts", short: "SA", description: "Bot and multi-account signals" },
+      { href: "/dashboard/flagged-accounts", label: "Flagged Accounts", short: "FA", description: "Reported abuse and bot signals" },
       { href: "/dashboard/moderation", label: "Moderation", short: "MO", description: "Reports and removals" },
       { href: "/dashboard/banned-users", label: "Banned Users", short: "BU", description: "Banned accounts and devices" },
     ],
