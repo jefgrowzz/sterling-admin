@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import logo from "@/assets/MobileAppLogo.png";
 
 type NavItem = {
   href: string;
@@ -18,6 +20,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { href: "/dashboard", label: "Overview", short: "OV", description: "Live platform pulse" },
       { href: "/dashboard/analytics", label: "Analytics", short: "AN", description: "Growth and quality trends" },
       { href: "/dashboard/audit-logs", label: "Audit Logs", short: "AL", description: "Admin activity history" },
+      { href: "/dashboard/news", label: "News", short: "NW", description: "Manage the daily news override" },
     ],
   },
   {
@@ -26,13 +29,13 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { href: "/dashboard/users", label: "Users", short: "US", description: "Profiles, cheats, and notifications" },
       { href: "/dashboard/communities", label: "Communities", short: "CM", description: "Groups, visibility, owners" },
       { href: "/dashboard/events", label: "Events", short: "EV", description: "Meetups and gatherings" },
+      { href: "/dashboard/discussions", label: "Discussions", short: "DS", description: "Area discussions and comments" },
     ],
   },
   {
     label: "Trust",
     items: [
-      { href: "/dashboard/flagged-accounts", label: "Trust & Safety", short: "TS", description: "Flagged accounts, reports, and bans" },
-      { href: "/dashboard/moderation", label: "Moderation", short: "MO", description: "Reports and removals" },
+      { href: "/dashboard/moderation", label: "Moderation", short: "MO", description: "Reports, flagged accounts, and bans" },
     ],
   },
 ];
@@ -152,8 +155,8 @@ export function Sidebar({
           <div className={`border-b border-zinc-800/80 px-4 py-5 ${collapsed ? "flex justify-center" : ""}`}>
             <div className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-between gap-3"}`}>
               <Link href="/dashboard" className={`flex min-w-0 items-center gap-3 ${collapsed ? "justify-center" : ""}`}>
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sm font-black tracking-tight text-zinc-900 shadow-sm">
-                  S
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm">
+                  <Image src={logo} alt="Sterling" width={44} height={44} className="h-full w-full object-cover" priority />
                 </div>
                 {!collapsed && (
                   <div className="min-w-0">
@@ -209,8 +212,8 @@ export function Sidebar({
       >
         <div className="flex items-center justify-between border-b border-zinc-800/80 px-4 py-5">
           <Link href="/dashboard" onClick={onCloseMobile} className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sm font-black tracking-tight text-zinc-900 shadow-sm">
-              S
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm">
+              <Image src={logo} alt="Sterling" width={44} height={44} className="h-full w-full object-cover" />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-emerald-400">Sterling</p>

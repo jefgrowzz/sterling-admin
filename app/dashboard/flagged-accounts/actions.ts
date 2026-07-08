@@ -7,12 +7,7 @@ import {
   fetchActiveBans as fetchActiveBansAction,
   fetchActiveDeviceBans as fetchActiveDeviceBansAction,
   unbanUser as unbanUserAction,
-  type ActiveBan,
-  type ActiveDeviceBan,
-  type BanType,
 } from "@/app/dashboard/banned-users/actions";
-
-export type { ActiveBan, ActiveDeviceBan, BanType };
 
 // ---------------------------------------------------------------------------
 // Types

@@ -15,6 +15,8 @@ type ReportRow = {
   description?: string | null;
   screenshot_urls?: string[] | null;
   status: ReportStatus;
+  review_priority?: string | null;
+  offense_label?: string | null;
 };
 
 type ProfileStub = { id: string; full_name?: string | null; username?: string | null };
@@ -54,7 +56,7 @@ export async function fetchReports(
 ): Promise<EnrichedReport[]> {
   let query = supabaseAdmin
     .from("reports")
-    .select("id,created_at,reporter_id,report_type,post_id,reported_user_id,category,description,screenshot_urls,status")
+    .select("id,created_at,reporter_id,report_type,post_id,reported_user_id,category,description,screenshot_urls,status,review_priority,offense_label")
     .in("report_type", types)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -188,6 +190,23 @@ export async function banPostAuthor(postId: string, reportId: string): Promise<v
 
   await banUser(post.author_id, `Banned for post violation (report: ${reportId})`);
   await updateReportStatus(reportId, "reviewed");
+}
+
+export async function removePost(reportId: string, postId: string): Promise<void> {
+  const [r1, r2] = await Promise.all([
+    supabaseAdmin.from("reports").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("id", reportId),
+    supabaseAdmin.from("posts").update({ status: "removed" }).eq("id", postId),
+  ]);
+  if (r1.error) throw new Error(r1.error.message);
+  if (r2.error) throw new Error(r2.error.message);
+
+  await logAdminAction({
+    category: "moderation",
+    action: "remove_post",
+    detail: `Removed post ${postId} (report: ${reportId})`,
+    targetType: "post",
+    targetId: postId,
+  });
 }
 
 // Reverses an auto-hide from the auto-moderation trigger (see
