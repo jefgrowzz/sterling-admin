@@ -1,7 +1,7 @@
 "use server";
 
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { logAdminAction } from "@/app/dashboard/lib/audit-log";
+import { logAdminAction, describeUser } from "@/app/dashboard/lib/audit-log";
 
 export type BanType = "general" | "harassment" | "spam" | "content_violation";
 
@@ -48,7 +48,7 @@ export async function unbanUser(userId: string): Promise<void> {
   await logAdminAction({
     category: "moderation",
     action: "unban_user",
-    detail: `Lifted ban on user ${userId}`,
+    detail: `Lifted ban on ${await describeUser(userId)}`,
     targetType: "user",
     targetId: userId,
   });
@@ -73,7 +73,7 @@ export async function banUser(params: {
   await logAdminAction({
     category: "moderation",
     action: "ban_user",
-    detail: `Banned user ${params.userId} (${params.banType}): ${params.reason}${
+    detail: `Banned ${await describeUser(params.userId)} (${params.banType}): ${params.reason}${
       params.alsoBanDevices ? " — devices also banned" : ""
     }`,
     targetType: "user",

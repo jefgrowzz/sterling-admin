@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react";
 import type { UserProfile } from "@/lib/types";
-import { supabaseAdmin } from "@/lib/supabase/server";
 import { Tabs } from "@/components/dashboard/Tabs";
 import { Pagination } from "@/components/ui/Pagination";
 import { banUser, type BanType } from "@/app/dashboard/banned-users/actions";
 import { strikeUser } from "@/app/dashboard/moderation/actions";
+import { fetchProfiles, updateProfile, type FetchFilter } from "@/app/dashboard/users/actions";
 import {
   fetchUserDevices,
   fetchDeviceAccounts,
@@ -17,74 +17,6 @@ import {
 } from "@/app/dashboard/users/device-actions";
 
 const PAGE_SIZE = 20;
-
-type FetchFilter = { account_role?: string; flagged?: boolean };
-
-async function fetchProfiles(
-  page: number,
-  filter: FetchFilter = {},
-  search = ""
-): Promise<{ profiles: UserProfile[]; totalCount: number }> {
-  const offset = (page - 1) * PAGE_SIZE;
-
-  let countQuery = supabaseAdmin
-    .from("profiles")
-    .select("*", { count: "exact", head: true });
-
-  let dataQuery = supabaseAdmin
-    .from("profiles")
-    .select(
-      `id,email,full_name,username,role,operating_markets,market_other,main_goals,created_at,updated_at,avatar_url,banner_url,bio,account_role,moderation_strike_count,phone_number`
-    )
-    .order("full_name", { ascending: true })
-    .range(offset, offset + PAGE_SIZE - 1);
-
-  if (filter.account_role) {
-    countQuery = countQuery.eq("account_role", filter.account_role);
-    dataQuery = dataQuery.eq("account_role", filter.account_role);
-  }
-  if (filter.flagged) {
-    countQuery = countQuery.gt("moderation_strike_count", 0);
-    dataQuery = dataQuery.gt("moderation_strike_count", 0);
-  }
-  if (search.trim()) {
-    const term = search.trim();
-    countQuery = countQuery.or(
-      `full_name.ilike.%${term}%,email.ilike.%${term}%,username.ilike.%${term}%`
-    );
-    dataQuery = dataQuery.or(
-      `full_name.ilike.%${term}%,email.ilike.%${term}%,username.ilike.%${term}%`
-    );
-  }
-
-  const [{ count }, { data, error }] = await Promise.all([
-    countQuery,
-    dataQuery,
-  ]);
-
-  if (error) throw new Error(error.message);
-
-  const profiles = (data ?? []).map((profile: any) => ({
-    ...profile,
-    operating_markets: profile.operating_markets ?? [],
-    main_goals: profile.main_goals ?? [],
-    account_role: profile.account_role ?? "member",
-    moderation_strike_count: profile.moderation_strike_count ?? 0,
-  }));
-
-  return { profiles, totalCount: count ?? 0 };
-}
-
-async function updateProfile(
-  id: string,
-  updates: Partial<UserProfile>
-): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("profiles")
-    .update(updates)
-    .eq("id", id);
-  if (error) throw new Error(error.message);
-}
 
 // ---------------------------------------------------------------------------
 // Edit panel

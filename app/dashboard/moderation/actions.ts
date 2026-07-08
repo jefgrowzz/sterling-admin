@@ -2,7 +2,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/server";
 import type { ReportStatus } from "@/lib/types";
-import { logAdminAction } from "@/app/dashboard/lib/audit-log";
+import { logAdminAction, describeUser } from "@/app/dashboard/lib/audit-log";
 
 type ReportRow = {
   id: string;
@@ -125,7 +125,7 @@ export async function strikeUser(userId: string): Promise<void> {
   await logAdminAction({
     category: "moderation",
     action: "strike_user",
-    detail: `Added moderation strike to user ${userId} (now ${newStrikeCount})`,
+    detail: `Added moderation strike to ${await describeUser(userId)} (now ${newStrikeCount})`,
     targetType: "user",
     targetId: userId,
   });
@@ -144,7 +144,7 @@ export async function banUser(userId: string, reason?: string): Promise<void> {
   await logAdminAction({
     category: "moderation",
     action: "ban_user",
-    detail: `Banned user ${userId}: ${finalReason} — devices also banned`,
+    detail: `Banned ${await describeUser(userId)}: ${finalReason} — devices also banned`,
     targetType: "user",
     targetId: userId,
   });
@@ -160,7 +160,7 @@ export async function unbanUser(userId: string): Promise<void> {
   await logAdminAction({
     category: "moderation",
     action: "unban_user",
-    detail: `Lifted ban on user ${userId}`,
+    detail: `Lifted ban on ${await describeUser(userId)}`,
     targetType: "user",
     targetId: userId,
   });

@@ -4,6 +4,17 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditCategory = "moderation" | "admin" | "security" | "system";
 
+// Resolves a user id to something recognizable for audit log detail strings —
+// otherwise entries just show a bare UUID with no way to tell who was affected.
+export async function describeUser(userId: string): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("profiles")
+    .select("email,username,full_name")
+    .eq("id", userId)
+    .maybeSingle();
+  return data?.email ?? data?.username ?? data?.full_name ?? userId;
+}
+
 export async function logAdminAction(params: {
   category: AuditCategory;
   action: string;
