@@ -12,7 +12,7 @@ import {
   type NewsOverride,
   type NewsCandidate,
 } from "./actions";
-import { getTomorrowUtcDate } from "./date";
+import { getTodayUtcDate, getTomorrowUtcDate } from "./date";
 
 function norm(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
@@ -488,7 +488,7 @@ function AddMarketForm({ onAdd, onCancel }: { onAdd: (city: string, state: strin
 // ---------------------------------------------------------------------------
 
 export default function NewsPage() {
-  const [dateUtc, setDateUtc] = useState(getTomorrowUtcDate());
+  const [dateUtc, setDateUtc] = useState(getTodayUtcDate());
   const [markets, setMarkets] = useState<Market[]>([]);
   const [overrides, setOverrides] = useState<NewsOverride[]>([]);
   const [loading, setLoading] = useState(true);
@@ -581,6 +581,12 @@ export default function NewsPage() {
               className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
             />
           </label>
+          <button
+            onClick={() => setDateUtc(getTodayUtcDate())}
+            className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
+          >
+            Today (UTC)
+          </button>
           <button
             onClick={() => setDateUtc(getTomorrowUtcDate())}
             className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"

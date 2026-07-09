@@ -6,7 +6,7 @@ import {
   clearOverride,
   type NewsCandidate,
 } from "@/app/dashboard/news/actions";
-import { getTomorrowUtcDate } from "@/app/dashboard/news/date";
+import { getTodayUtcDate } from "@/app/dashboard/news/date";
 
 // Service-role-only admin endpoints backing the News tab. getCurrentAdmin() redirects
 // unauthenticated/non-staff callers, which for a route handler surfaces as a 307 to
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const override = await fetchOverride({
       city,
       state: state || null,
-      dateUtc: date || getTomorrowUtcDate(),
+      dateUtc: date || getTodayUtcDate(),
     });
     return NextResponse.json({ override });
   } catch (error: any) {

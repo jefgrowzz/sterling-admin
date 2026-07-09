@@ -62,6 +62,36 @@ function normalize(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+// The mobile app normalizes state to a 2-letter USPS abbreviation before calling
+// get_market_news_override (e.g. "Texas" -> "TX"). Admin input isn't guaranteed to
+// come in that form (an admin might type the full name), so every write path here
+// runs state through this first — otherwise "Texas" and "TX" would be stored as
+// different rows and the app's lookup would never match what was saved.
+const STATE_ABBREVIATIONS: Record<string, string> = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA",
+  colorado: "CO", connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA",
+  hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA",
+  kansas: "KS", kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD",
+  massachusetts: "MA", michigan: "MI", minnesota: "MN", mississippi: "MS", missouri: "MO",
+  montana: "MT", nebraska: "NE", nevada: "NV", "new hampshire": "NH", "new jersey": "NJ",
+  "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", ohio: "OH",
+  oklahoma: "OK", oregon: "OR", pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC",
+  "south dakota": "SD", tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT",
+  virginia: "VA", washington: "WA", "west virginia": "WV", wisconsin: "WI", wyoming: "WY",
+  "district of columbia": "DC", "puerto rico": "PR", guam: "GU", "virgin islands": "VI",
+  "american samoa": "AS", "northern mariana islands": "MP",
+};
+
+function normalizeStateAbbreviation(state: string | null | undefined): string | null {
+  const trimmed = (state ?? "").trim();
+  if (!trimmed) return null;
+  const mapped = STATE_ABBREVIATIONS[trimmed.toLowerCase()];
+  if (mapped) return mapped;
+  // Already a 2-letter code (or an unrecognized value) — uppercase and pass
+  // through rather than reject, so unusual/territory codes aren't silently lost.
+  return trimmed.length === 2 ? trimmed.toUpperCase() : trimmed;
+}
+
 export type Market = {
   city: string;
   state: string | null;
@@ -94,7 +124,7 @@ export async function fetchMarkets(): Promise<Market[]> {
 // does so it behaves identically to a market discovered from live app traffic.
 export async function addMarket(params: { city: string; state?: string | null }): Promise<Market> {
   const city = params.city.trim();
-  const state = params.state?.trim() || null;
+  const state = normalizeStateAbbreviation(params.state);
   if (!city) throw new Error("City is required");
 
   const cityNorm = normalize(city);
@@ -138,7 +168,7 @@ export async function fetchOverride(params: {
   dateUtc: string;
 }): Promise<NewsOverride | null> {
   const cityNorm = normalize(params.city);
-  const stateNorm = normalize(params.state);
+  const stateNorm = normalize(normalizeStateAbbreviation(params.state));
 
   const { data, error } = await supabaseAdmin
     .from("market_news_overrides")
@@ -173,7 +203,7 @@ export async function fetchCandidates(params: {
   state?: string | null;
 }): Promise<NewsCandidate[]> {
   const { data, error } = await supabaseAdmin.functions.invoke("market-news", {
-    body: { city: params.city, state: params.state ?? null },
+    body: { city: params.city, state: normalizeStateAbbreviation(params.state) },
   });
   if (error) throw new Error(error.message);
 
@@ -189,7 +219,7 @@ export async function saveOverride(params: {
   reason?: string;
 }): Promise<NewsOverride> {
   const admin = await getCurrentAdmin();
-  const state = params.state?.trim() || null;
+  const state = normalizeStateAbbreviation(params.state);
   const cityNorm = normalize(params.city);
   const stateNorm = normalize(state);
 
@@ -257,7 +287,7 @@ export async function clearOverride(params: {
   state?: string | null;
 }): Promise<void> {
   const admin = await getCurrentAdmin();
-  const state = params.state?.trim() || null;
+  const state = normalizeStateAbbreviation(params.state);
   const cityNorm = normalize(params.city);
   const stateNorm = normalize(state);
 

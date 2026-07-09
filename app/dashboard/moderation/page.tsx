@@ -591,19 +591,25 @@ function ReportsView() {
 
   const queues = [
     {
-      name: "Post reports",
-      count: stats?.postPending ?? "—",
-      note: stats && stats.postPending > 0 ? "Awaiting review" : "Queue clear",
+      title: "Post reports",
+      value: stats ? String(stats.postPending) : "—",
+      change: "",
+      subtitle: stats && stats.postPending > 0 ? "Awaiting review" : "Queue clear",
+      tone: stats && stats.postPending > 0 ? ("amber" as const) : ("emerald" as const),
     },
     {
-      name: "Profile reports",
-      count: stats?.profilePending ?? "—",
-      note: stats && stats.profilePending > 0 ? "Review flagged accounts" : "Queue clear",
+      title: "Profile reports",
+      value: stats ? String(stats.profilePending) : "—",
+      change: "",
+      subtitle: stats && stats.profilePending > 0 ? "Review flagged accounts" : "Queue clear",
+      tone: stats && stats.profilePending > 0 ? ("amber" as const) : ("emerald" as const),
     },
     {
-      name: "Bug reports",
-      count: stats?.bugPending ?? "—",
-      note: stats && stats.bugPending > 0 ? "User-submitted bugs" : "No open bugs",
+      title: "Bug reports",
+      value: stats ? String(stats.bugPending) : "—",
+      change: "",
+      subtitle: stats && stats.bugPending > 0 ? "User-submitted bugs" : "No open bugs",
+      tone: stats && stats.bugPending > 0 ? ("rose" as const) : ("emerald" as const),
     },
   ];
 
@@ -613,13 +619,7 @@ function ReportsView() {
       <div className="grid gap-4 md:grid-cols-3">
         {!stats
           ? Array.from({ length: 3 }).map((_, i) => <StatCardSkeleton key={i} />)
-          : queues.map((q) => (
-              <div key={q.name} className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm transition hover:shadow-md">
-                <p className="text-sm font-medium text-zinc-400">{q.name}</p>
-                <p className="mt-4 text-3xl font-semibold text-zinc-50">{String(q.count)}</p>
-                <p className="mt-2 text-sm text-zinc-400">{q.note}</p>
-              </div>
-            ))}
+          : queues.map((q) => <StatsCard key={q.title} {...q} />)}
       </div>
 
       {/* Main content */}
@@ -1398,7 +1398,7 @@ export default function ModerationPage() {
               { id: "banned",  label: "Banned users",     color: "blue"  },
             ]}
             defaultTab="reports"
-            variant="pills"
+            variant="segmented"
             onChange={(id) => setPageView(id as PageView)}
           />
         </div>
