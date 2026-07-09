@@ -30,6 +30,7 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { href: "/dashboard/communities", label: "Communities", short: "CM", description: "Groups, visibility, owners" },
       { href: "/dashboard/events", label: "Events", short: "EV", description: "Meetups and gatherings" },
       { href: "/dashboard/discussions", label: "Discussions", short: "DS", description: "Area discussions and comments" },
+      { href: "/dashboard/invite-points", label: "Invite Points", short: "IP", description: "Manually adjust referral points" },
     ],
   },
   {
