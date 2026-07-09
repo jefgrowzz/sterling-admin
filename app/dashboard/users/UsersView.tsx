@@ -25,6 +25,14 @@ const PAGE_SIZE = 20;
 const ACCOUNT_ROLES = ["member", "creator", "moderator", "admin", "owner"];
 const USER_ROLES = ["member", "creator", "moderator", "admin", "support", "owner"];
 
+const ACCOUNT_ROLE_BADGE: Record<string, string> = {
+  owner: "bg-violet-500/15 text-violet-300",
+  admin: "bg-rose-500/15 text-rose-300",
+  moderator: "bg-amber-500/15 text-amber-300",
+  creator: "bg-blue-500/15 text-blue-300",
+  member: "bg-emerald-500/15 text-emerald-300",
+};
+
 function Field({
   label,
   children,
@@ -680,7 +688,10 @@ function UserRow({
   onEdit: (user: UserProfile) => void;
 }) {
   return (
-    <tr className="hover:bg-zinc-800/60 transition-colors">
+    <tr
+      onClick={() => onEdit(user)}
+      className="cursor-pointer transition-colors hover:bg-zinc-800/60"
+    >
       <td className="px-6 py-4">
         <p className="font-medium text-zinc-50">{user.full_name ?? user.username ?? "—"}</p>
         {user.username && <p className="mt-0.5 text-xs text-zinc-500">@{user.username}</p>}
@@ -706,11 +717,7 @@ function UserRow({
       <td className="px-6 py-4">
         <span
           className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${
-            user.account_role === "admin"
-              ? "bg-rose-500/15 text-rose-300"
-              : user.account_role === "moderator"
-              ? "bg-amber-500/15 text-amber-300"
-              : "bg-emerald-500/15 text-emerald-300"
+            ACCOUNT_ROLE_BADGE[user.account_role] ?? "bg-zinc-800 text-zinc-400"
           }`}
         >
           {user.account_role}
@@ -731,7 +738,10 @@ function UserRow({
       </td>
       <td className="px-6 py-4">
         <button
-          onClick={() => onEdit(user)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(user);
+          }}
           className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300"
           title="Edit user"
         >
@@ -913,31 +923,8 @@ export function UserManagementView() {
 
   return (
     <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-400">
-            Users
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold text-zinc-50">
-            User profiles
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-            Browse, filter, and manage user accounts across the platform.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800">
-            Filters
-          </button>
-          <button className="rounded-full bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-200">
-            Bulk actions
-          </button>
-        </div>
-      </div>
-
       {/* Search */}
-      <div className="relative mt-5">
+      <div className="relative">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 20 20"
@@ -983,6 +970,7 @@ export function UserManagementView() {
           ]}
           defaultTab="all"
           variant="pills"
+          size="sm"
           onChange={setActiveTab}
         />
       </div>

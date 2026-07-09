@@ -99,15 +99,7 @@ type AdjustmentRow = {
 
 type ProfileStub = { id: string; email: string | null; username: string | null; full_name: string | null; referral_count: number | null };
 
-export async function fetchRecentAdjustments(limit = 20): Promise<RecentAdjustment[]> {
-  const { data, error } = await supabaseAdmin
-    .from("admin_invite_point_adjustments")
-    .select("id,target_user_id,points_delta,reason,created_by_admin_id,created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new Error(error.message);
-
-  const rows = (data ?? []) as AdjustmentRow[];
+async function enrichAdjustments(rows: AdjustmentRow[]): Promise<RecentAdjustment[]> {
   const userIds = [...new Set(rows.flatMap((r) => [r.target_user_id, r.created_by_admin_id]))];
   const { data: profiles, error: profilesError } = userIds.length
     ? await supabaseAdmin.from("profiles").select("id,email,username,full_name,referral_count").in("id", userIds)
@@ -131,4 +123,29 @@ export async function fetchRecentAdjustments(limit = 20): Promise<RecentAdjustme
         : null,
     };
   });
+}
+
+export async function fetchRecentAdjustments(limit = 20): Promise<RecentAdjustment[]> {
+  const { data, error } = await supabaseAdmin
+    .from("admin_invite_point_adjustments")
+    .select("id,target_user_id,points_delta,reason,created_by_admin_id,created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+
+  return enrichAdjustments((data ?? []) as AdjustmentRow[]);
+}
+
+// Powers the "history for this user" list shown once a target is selected, so an
+// admin can see prior grants/deductions before adding another one.
+export async function fetchAdjustmentsForUser(userId: string, limit = 5): Promise<RecentAdjustment[]> {
+  const { data, error } = await supabaseAdmin
+    .from("admin_invite_point_adjustments")
+    .select("id,target_user_id,points_delta,reason,created_by_admin_id,created_at")
+    .eq("target_user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+
+  return enrichAdjustments((data ?? []) as AdjustmentRow[]);
 }

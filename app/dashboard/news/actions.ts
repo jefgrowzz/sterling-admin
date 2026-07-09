@@ -87,6 +87,51 @@ export async function fetchMarkets(): Promise<Market[]> {
   }));
 }
 
+// "Add market manually" used to only add to the client's local React state — it
+// was never written to market_news_requests (the table fetchMarkets() reads
+// from), so the market vanished again on refresh even after an override had
+// been saved for it. This persists it for real, upserting the same way the RPC
+// does so it behaves identically to a market discovered from live app traffic.
+export async function addMarket(params: { city: string; state?: string | null }): Promise<Market> {
+  const city = params.city.trim();
+  const state = params.state?.trim() || null;
+  if (!city) throw new Error("City is required");
+
+  const cityNorm = normalize(city);
+  const stateNorm = normalize(state);
+
+  const { data: existing, error: lookupError } = await supabaseAdmin
+    .from("market_news_requests")
+    .select("city,state,request_count,last_requested_at")
+    .eq("city_norm", cityNorm)
+    .eq("state_norm", stateNorm)
+    .maybeSingle();
+  if (lookupError) throw new Error(lookupError.message);
+
+  if (existing) {
+    return {
+      city: existing.city,
+      state: existing.state,
+      requestCount: existing.request_count,
+      lastRequestedAt: existing.last_requested_at,
+    };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("market_news_requests")
+    .insert({ city, state, request_count: 0 })
+    .select("city,state,request_count,last_requested_at")
+    .single();
+  if (error) throw new Error(error.message);
+
+  return {
+    city: data.city,
+    state: data.state,
+    requestCount: data.request_count,
+    lastRequestedAt: data.last_requested_at,
+  };
+}
+
 export async function fetchOverride(params: {
   city: string;
   state?: string | null;
@@ -107,6 +152,20 @@ export async function fetchOverride(params: {
   if (error) throw new Error(error.message);
 
   return data ?? null;
+}
+
+// Batched alternative to calling fetchOverride() once per market — a single query
+// for every override on a given date, matched back to markets in JS via
+// city_norm/state_norm. Used by the markets list so all rows resolve together
+// instead of each row firing its own request and popping in independently.
+export async function fetchOverridesForDate(dateUtc: string): Promise<NewsOverride[]> {
+  const { data, error } = await supabaseAdmin
+    .from("market_news_overrides")
+    .select("*")
+    .eq("date_utc", dateUtc)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as NewsOverride[];
 }
 
 export async function fetchCandidates(params: {
@@ -150,6 +209,11 @@ export async function saveOverride(params: {
     created_by: admin.id,
     updated_at: new Date().toISOString(),
   };
+
+  // Defensive: guarantees this market shows up in fetchMarkets() regardless of
+  // how it got here (manual add, or a market whose only request row predates
+  // this dashboard's tracking). No-ops if it already exists.
+  await addMarket({ city: params.city, state });
 
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("market_news_overrides")

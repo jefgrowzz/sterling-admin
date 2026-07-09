@@ -583,22 +583,16 @@ export function CheatsView() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">⚡</span>
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-400">Admin Cheats</p>
-            <h2 className="mt-1 text-2xl font-semibold text-zinc-50">Engagement boosting</h2>
-          </div>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-amber-300">
-          Directly write fake likes and connections to the database. Changes are permanent and bypass normal platform rules.
-        </p>
-      </div>
-
       {/* Controls */}
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+        {/* Warning */}
+        <div className="mb-5 flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+          <span className="mt-0.5 shrink-0 text-amber-400">⚡</span>
+          <p className="text-sm leading-6 text-amber-300">
+            Directly writes fake likes and connections to the database. Changes are permanent and bypass normal platform rules.
+          </p>
+        </div>
+
         {/* Tab switcher */}
         <div className="flex gap-2">
           <button

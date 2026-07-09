@@ -1,23 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchMarkets,
-  fetchOverride,
+  fetchOverridesForDate,
   fetchCandidates,
   saveOverride,
   clearOverride,
+  addMarket,
   type Market,
   type NewsOverride,
   type NewsCandidate,
 } from "./actions";
 import { getTomorrowUtcDate } from "./date";
 
-function marketKey(m: Market): string {
-  return `${m.city}|${m.state ?? ""}`;
+function norm(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
-function marketLabel(m: Market): string {
+function marketKey(m: { city: string; state: string | null }): string {
+  return `${norm(m.city)}|${norm(m.state)}`;
+}
+
+function marketLabel(m: { city: string; state: string | null }): string {
   return m.state ? `${m.city}, ${m.state}` : m.city;
 }
 
@@ -54,6 +59,15 @@ function OverrideBadge({ hasOverride }: { hasOverride: boolean }) {
   );
 }
 
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-800/60 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
 function MarketRowSkeleton() {
   return (
     <div className="animate-pulse rounded-2xl border border-zinc-800 bg-zinc-800/60 p-4">
@@ -71,29 +85,20 @@ function MarketRowSkeleton() {
 
 function MarketRow({
   market,
-  dateUtc,
+  override,
   onManage,
 }: {
   market: Market;
-  dateUtc: string;
+  override: NewsOverride | null;
   onManage: () => void;
 }) {
-  const [override, setOverride] = useState<NewsOverride | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setOverride(undefined);
-    fetchOverride({ city: market.city, state: market.state, dateUtc })
-      .then((result) => { if (!cancelled) setOverride(result); })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load"); });
-    return () => { cancelled = true; };
-  }, [market.city, market.state, dateUtc]);
-
-  const loading = override === undefined;
-
+  const hasOverride = !!override;
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-800/60 p-4 transition hover:border-zinc-700">
+    <div
+      className={`rounded-2xl border-l-4 bg-zinc-800/60 p-4 transition hover:border-l-zinc-600 ${
+        hasOverride ? "border-l-emerald-500" : "border-l-zinc-700"
+      }`}
+    >
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
@@ -102,17 +107,13 @@ function MarketRow({
               {market.requestCount} request{market.requestCount !== 1 ? "s" : ""} · last {timeAgo(market.lastRequestedAt)}
             </span>
           </div>
-          {loading ? (
-            <div className="mt-1.5 h-3 w-56 animate-pulse rounded bg-zinc-700" />
-          ) : error ? (
-            <p className="mt-1 text-xs text-rose-400">{error}</p>
-          ) : override ? (
+          {override ? (
             <p className="mt-1 line-clamp-1 text-sm text-zinc-400">{override.title}</p>
           ) : (
             <p className="mt-1 text-sm italic text-zinc-500">No override — using auto selection</p>
           )}
         </div>
-        {!loading && !error && <OverrideBadge hasOverride={!!override} />}
+        <OverrideBadge hasOverride={hasOverride} />
         <button
           onClick={onManage}
           className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
@@ -142,14 +143,17 @@ function CandidateCardSkeleton() {
 function CandidateCard({
   candidate,
   selected,
+  isCurrent,
   onSelect,
 }: {
   candidate: NewsCandidate;
   selected: boolean;
+  isCurrent: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
+      type="button"
       onClick={onSelect}
       className={`w-full rounded-2xl border p-4 text-left transition ${
         selected
@@ -174,11 +178,18 @@ function CandidateCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <p className="line-clamp-2 text-sm font-semibold text-zinc-50">{candidate.title}</p>
-            {selected && (
-              <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
-                Selected
-              </span>
-            )}
+            <div className="flex shrink-0 gap-1">
+              {isCurrent && (
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
+                  Current
+                </span>
+              )}
+              {selected && !isCurrent && (
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
+                  Selected
+                </span>
+              )}
+            </div>
           </div>
           {candidate.description && (
             <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{candidate.description}</p>
@@ -205,17 +216,17 @@ function CandidateCard({
 function ManagePanel({
   market,
   dateUtc,
+  initialOverride,
   onClose,
   onChanged,
 }: {
   market: Market;
   dateUtc: string;
+  initialOverride: NewsOverride | null;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: (override: NewsOverride | null, message: string) => void;
 }) {
-  const [override, setOverride] = useState<NewsOverride | null>(null);
-  const [overrideLoading, setOverrideLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [override, setOverride] = useState<NewsOverride | null>(initialOverride);
 
   const [candidates, setCandidates] = useState<NewsCandidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
@@ -225,19 +236,7 @@ function ManagePanel({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
-
-  const loadOverride = useCallback(() => {
-    setOverrideLoading(true);
-    setError(null);
-    fetchOverride({ city: market.city, state: market.state, dateUtc })
-      .then(setOverride)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load override"))
-      .finally(() => setOverrideLoading(false));
-  }, [market.city, market.state, dateUtc]);
-
-  useEffect(() => {
-    loadOverride();
-  }, [loadOverride]);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleFetchCandidates() {
     setCandidatesLoading(true);
@@ -269,7 +268,8 @@ function ManagePanel({
       setOverride(result);
       setSelected(null);
       setCandidates([]);
-      onChanged();
+      setReason("");
+      onChanged(result, `Saved override for ${marketLabel(market)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save override");
     } finally {
@@ -283,7 +283,7 @@ function ManagePanel({
     try {
       await clearOverride({ dateUtc, city: market.city, state: market.state });
       setOverride(null);
-      onChanged();
+      onChanged(null, `Cleared override for ${marketLabel(market)} — back to auto selection`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clear override");
     } finally {
@@ -310,12 +310,10 @@ function ManagePanel({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Current story</h3>
-            {!overrideLoading && <OverrideBadge hasOverride={!!override} />}
+            <OverrideBadge hasOverride={!!override} />
           </div>
 
-          {overrideLoading ? (
-            <CandidateCardSkeleton />
-          ) : override ? (
+          {override ? (
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
               <div className="flex gap-4">
                 {override.image_url ? (
@@ -377,6 +375,7 @@ function ManagePanel({
                   key={c.article_id ?? c.article_url ?? i}
                   candidate={c}
                   selected={selected?.article_url === c.article_url}
+                  isCurrent={!!override && override.article_url === c.article_url}
                   onSelect={() => setSelected(c)}
                 />
               ))
@@ -423,9 +422,24 @@ function ManagePanel({
 // Add market
 // ---------------------------------------------------------------------------
 
-function AddMarketForm({ onAdd, onCancel }: { onAdd: (market: Pick<Market, "city" | "state">) => void; onCancel: () => void }) {
+function AddMarketForm({ onAdd, onCancel }: { onAdd: (city: string, state: string | null) => Promise<void>; onCancel: () => void }) {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    if (!city.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onAdd(city.trim(), state.trim() || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add market");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-800/60 p-4">
@@ -448,19 +462,23 @@ function AddMarketForm({ onAdd, onCancel }: { onAdd: (market: Pick<Market, "city
           className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
         />
         <button
-          onClick={() => city.trim() && onAdd({ city: city.trim(), state: state.trim() || null })}
-          disabled={!city.trim()}
+          type="button"
+          onClick={handleAdd}
+          disabled={!city.trim() || submitting}
           className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:opacity-40"
         >
-          Add
+          {submitting ? "Adding…" : "Add"}
         </button>
         <button
+          type="button"
           onClick={onCancel}
-          className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
+          disabled={submitting}
+          className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-40"
         >
           Cancel
         </button>
       </div>
+      {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
     </div>
   );
 }
@@ -472,22 +490,51 @@ function AddMarketForm({ onAdd, onCancel }: { onAdd: (market: Pick<Market, "city
 export default function NewsPage() {
   const [dateUtc, setDateUtc] = useState(getTomorrowUtcDate());
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [overrides, setOverrides] = useState<NewsOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [addingMarket, setAddingMarket] = useState(false);
   const [managing, setManaging] = useState<Market | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
-    fetchMarkets()
-      .then(setMarkets)
+    setError(null);
+    Promise.all([fetchMarkets(), fetchOverridesForDate(dateUtc)])
+      .then(([m, o]) => { setMarkets(m); setOverrides(o); })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load markets"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [dateUtc]);
 
-  function handleAddMarket(seed: Pick<Market, "city" | "state">) {
-    const market: Market = { ...seed, requestCount: 0, lastRequestedAt: new Date().toISOString() };
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const overrideByMarket = useMemo(() => {
+    const map = new Map<string, NewsOverride>();
+    for (const o of overrides) {
+      const key = marketKey({ city: o.city, state: o.state });
+      // overrides is sorted updated_at desc, so the first hit per key is the latest.
+      if (!map.has(key)) map.set(key, o);
+    }
+    return map;
+  }, [overrides]);
+
+  const filteredMarkets = useMemo(() => {
+    const term = norm(search);
+    if (!term) return markets;
+    return markets.filter((m) => norm(marketLabel(m)).includes(term));
+  }, [markets, search]);
+
+  const overriddenCount = markets.filter((m) => overrideByMarket.has(marketKey(m))).length;
+
+  async function handleAddMarket(city: string, state: string | null) {
+    const market = await addMarket({ city, state });
     setMarkets((prev) => {
       const key = marketKey(market);
       if (prev.some((m) => marketKey(m) === key)) return prev;
@@ -495,6 +542,15 @@ export default function NewsPage() {
     });
     setAddingMarket(false);
     setManaging(market);
+  }
+
+  function handleOverrideChanged(market: Market, override: NewsOverride | null, message: string) {
+    setOverrides((prev) => {
+      const key = marketKey(market);
+      const withoutThis = prev.filter((o) => marketKey({ city: o.city, state: o.state }) !== key);
+      return override ? [override, ...withoutThis] : withoutThis;
+    });
+    setToast(message);
   }
 
   return (
@@ -508,6 +564,12 @@ export default function NewsPage() {
           selected date. Markets appear here automatically from real traffic. The mobile app checks
           for a manual override first and falls back to auto-selection when none is set.
         </p>
+
+        <div className="mt-5 grid grid-cols-3 gap-2 border-t border-zinc-800 pt-5 sm:max-w-md">
+          <StatChip label="Markets" value={loading ? "—" : String(markets.length)} />
+          <StatChip label="Overridden" value={loading ? "—" : String(overriddenCount)} />
+          <StatChip label="Auto" value={loading ? "—" : String(markets.length - overriddenCount)} />
+        </div>
 
         <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-zinc-800 pt-5">
           <label className="block">
@@ -525,6 +587,15 @@ export default function NewsPage() {
           >
             Preview tomorrow (UTC)
           </button>
+          <label className="block flex-1 min-w-[180px]">
+            <span className="mb-1.5 block text-xs font-medium text-zinc-400">Search markets</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by city or state"
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
+            />
+          </label>
           <div className="ml-auto">
             <button
               onClick={() => setAddingMarket(true)}
@@ -547,17 +618,23 @@ export default function NewsPage() {
             Array.from({ length: 4 }).map((_, i) => <MarketRowSkeleton key={i} />)
           ) : error ? (
             <div className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
-          ) : markets.length === 0 ? (
+          ) : filteredMarkets.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
-              <p>No markets requested yet</p>
-              <p className="text-xs">Markets show up here as soon as the app requests news for them</p>
+              {markets.length === 0 ? (
+                <>
+                  <p>No markets requested yet</p>
+                  <p className="text-xs">Markets show up here as soon as the app requests news for them</p>
+                </>
+              ) : (
+                <p>No markets match "{search}"</p>
+              )}
             </div>
           ) : (
-            markets.map((market) => (
+            filteredMarkets.map((market) => (
               <MarketRow
-                key={`${marketKey(market)}-${refreshKey}`}
+                key={marketKey(market)}
                 market={market}
-                dateUtc={dateUtc}
+                override={overrideByMarket.get(marketKey(market)) ?? null}
                 onManage={() => setManaging(market)}
               />
             ))
@@ -569,9 +646,16 @@ export default function NewsPage() {
         <ManagePanel
           market={managing}
           dateUtc={dateUtc}
+          initialOverride={overrideByMarket.get(marketKey(managing)) ?? null}
           onClose={() => setManaging(null)}
-          onChanged={() => setRefreshKey((k) => k + 1)}
+          onChanged={(override, message) => handleOverrideChanged(managing, override, message)}
         />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-300 shadow-lg ring-1 ring-emerald-500/30">
+          {toast}
+        </div>
       )}
     </div>
   );

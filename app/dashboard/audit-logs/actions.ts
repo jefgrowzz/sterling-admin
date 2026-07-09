@@ -15,11 +15,12 @@ export type AuditLogEntry = {
   created_at: string;
 };
 
-const AUDIT_PAGE_SIZE = 5;
+const AUDIT_PAGE_SIZE = 20;
 
 export async function fetchAuditLogs(
   page: number,
-  category?: AuditCategory
+  category?: AuditCategory,
+  search = ""
 ): Promise<{ logs: AuditLogEntry[]; totalCount: number }> {
   const offset = (page - 1) * AUDIT_PAGE_SIZE;
 
@@ -36,6 +37,13 @@ export async function fetchAuditLogs(
   if (category) {
     countQuery = countQuery.eq("category", category);
     dataQuery = dataQuery.eq("category", category);
+  }
+
+  if (search.trim()) {
+    const term = search.trim();
+    const filter = `actor_label.ilike.%${term}%,detail.ilike.%${term}%,action.ilike.%${term}%,target_id.ilike.%${term}%`;
+    countQuery = countQuery.or(filter);
+    dataQuery = dataQuery.or(filter);
   }
 
   const [{ count }, { data, error }] = await Promise.all([countQuery, dataQuery]);

@@ -75,6 +75,46 @@ function creatorLabel(p: ProfileStub | null): string {
   return p.username ? `@${p.username}` : p.full_name ?? "Unknown user";
 }
 
+function getInitials(p: ProfileStub | null): string {
+  if (p?.full_name?.trim()) {
+    const parts = p.full_name.trim().split(/\s+/);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    return p.full_name.slice(0, 2).toUpperCase();
+  }
+  return (p?.username ?? "??").slice(0, 2).toUpperCase();
+}
+
+const AVATAR_PALETTES = [
+  "bg-violet-500/15 text-violet-300",
+  "bg-blue-500/15 text-blue-300",
+  "bg-emerald-500/15 text-emerald-300",
+  "bg-amber-500/15 text-amber-300",
+  "bg-rose-500/15 text-rose-300",
+];
+
+function avatarColor(id: string): string {
+  const n = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_PALETTES[n % AVATAR_PALETTES.length];
+}
+
+function Avatar({ id, person, size = "sm" }: { id: string; person: ProfileStub | null; size?: "sm" | "md" }) {
+  const dims = size === "md" ? "h-11 w-11 text-sm" : "h-8 w-8 text-xs";
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-full font-bold ${dims} ${avatarColor(id)}`}>
+      {getInitials(person)}
+    </div>
+  );
+}
+
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-800/60 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
 function LocationCard({ discussion, address }: { discussion: Discussion; address: ReverseGeocodedAddress | null }) {
   const { center_lat: lat, center_lng: lng } = discussion;
   const pad = 0.01;
@@ -300,16 +340,12 @@ export default function DiscussionDetailPage({ params }: { params: Promise<{ id:
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-400">Discussion</p>
             <h2 className="mt-2 text-2xl font-semibold text-zinc-50">{discussion.title}</h2>
             {discussion.description && <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">{discussion.description}</p>}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-              <span>By {creatorLabel(discussion.creator)}</span>
-              <span>·</span>
-              <span>{discussion.location_hint ?? "No location hint"}</span>
-              <span>·</span>
-              <span className="font-mono">{discussion.center_lat.toFixed(4)}, {discussion.center_lng.toFixed(4)}</span>
-              <span>·</span>
-              <span>{discussion.radius_miles} mi radius</span>
-              <span>·</span>
-              <span>Created {formatDate(discussion.created_at)}</span>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Avatar id={discussion.creator_id} person={discussion.creator} />
+              <div>
+                <p className="text-sm font-medium text-zinc-300">{creatorLabel(discussion.creator)}</p>
+                <p className="text-xs text-zinc-500">Created {formatDate(discussion.created_at)}</p>
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -328,6 +364,13 @@ export default function DiscussionDetailPage({ params }: { params: Promise<{ id:
               {deletingDiscussion ? "Deleting…" : "Delete discussion"}
             </button>
           </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <StatChip label="Location" value={discussion.location_hint ?? "—"} />
+          <StatChip label="Radius" value={`${discussion.radius_miles} mi`} />
+          <StatChip label="Comments" value={String(discussion.comment_count)} />
+          <StatChip label="Rating" value={discussion.rate_count > 0 ? `★ ${discussion.avg_rate?.toFixed(1)} (${discussion.rate_count})` : "No ratings"} />
         </div>
 
         {pendingReports.length > 0 && (
@@ -385,17 +428,20 @@ export default function DiscussionDetailPage({ params }: { params: Promise<{ id:
               {reports.map((r) => (
                 <div key={r.id} className="rounded-xl border border-zinc-800 bg-zinc-800/60 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold capitalize text-zinc-300">{r.category.replace(/_/g, " ")}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${REPORT_STATUS_BADGE[r.status] ?? "bg-zinc-800 text-zinc-400"}`}>
-                          {r.status}
-                        </span>
+                    <div className="flex min-w-0 gap-3">
+                      <Avatar id={r.reporter_id} person={r.reporter} />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold capitalize text-zinc-300">{r.category.replace(/_/g, " ")}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${REPORT_STATUS_BADGE[r.status] ?? "bg-zinc-800 text-zinc-400"}`}>
+                            {r.status}
+                          </span>
+                        </div>
+                        {r.description && <p className="mt-1 text-sm text-zinc-400">{r.description}</p>}
+                        <p className="mt-1 text-[11px] text-zinc-500">
+                          Reported by {creatorLabel(r.reporter)} · {formatDate(r.created_at)}
+                        </p>
                       </div>
-                      {r.description && <p className="mt-1 text-sm text-zinc-400">{r.description}</p>}
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        Reported by {creatorLabel(r.reporter)} · {formatDate(r.created_at)}
-                      </p>
                     </div>
                     {r.status === "pending" && (
                       <div className="flex shrink-0 gap-1.5">
@@ -440,25 +486,32 @@ export default function DiscussionDetailPage({ params }: { params: Promise<{ id:
         ) : (
           <div className="space-y-3">
             {comments.map((c) => (
-              <div key={c.id} className="rounded-xl border border-zinc-800 bg-zinc-800/60 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-zinc-300">{creatorLabel(c.author)}</span>
-                      {c.parent_id && <span className="text-[10px] text-zinc-500">reply</span>}
+              <div key={c.id} className={c.parent_id ? "ml-8 border-l-2 border-zinc-800 pl-4" : ""}>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-800/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 gap-3">
+                      <Avatar id={c.author_id} person={c.author} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-zinc-300">{creatorLabel(c.author)}</span>
+                          {c.parent_id && (
+                            <span className="rounded-full bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-zinc-400">reply</span>
+                          )}
+                        </div>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-400">{c.body}</p>
+                        <p className="mt-1.5 text-[11px] text-zinc-500">
+                          {formatDate(c.created_at)} · {c.likes_count} like{c.likes_count !== 1 ? "s" : ""}
+                        </p>
+                      </div>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-400">{c.body}</p>
-                    <p className="mt-1.5 text-[11px] text-zinc-500">
-                      {formatDate(c.created_at)} · {c.likes_count} like{c.likes_count !== 1 ? "s" : ""}
-                    </p>
+                    <button
+                      onClick={() => handleDeleteComment(c.id)}
+                      disabled={deletingCommentId === c.id}
+                      className="shrink-0 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:opacity-40"
+                    >
+                      {deletingCommentId === c.id ? "Deleting…" : "Delete"}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleDeleteComment(c.id)}
-                    disabled={deletingCommentId === c.id}
-                    className="shrink-0 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:opacity-40"
-                  >
-                    {deletingCommentId === c.id ? "Deleting…" : "Delete"}
-                  </button>
                 </div>
               </div>
             ))}

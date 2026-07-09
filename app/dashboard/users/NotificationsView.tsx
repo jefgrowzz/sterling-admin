@@ -181,14 +181,6 @@ export function NotificationsView() {
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-violet-400">Engagement</p>
-        <h2 className="mt-2 text-2xl font-semibold text-zinc-50">Push Notifications</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-          Send a device pop-up notification, add a message to every user&apos;s in-app inbox, or both.
-        </p>
-      </div>
-
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lg font-semibold text-zinc-50">Templates</h3>
           <div className="flex shrink-0 gap-2">

@@ -1,5 +1,32 @@
 "use client";
 
+type ProgressRowProps = {
+  label: string;
+  count: number;
+  percentage: number;
+  color?: string;
+};
+
+export function ProgressRow({ label, count, percentage, color = "bg-zinc-500" }: ProgressRowProps) {
+  return (
+    <div className="rounded-lg px-3 py-2 hover:bg-zinc-800">
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate text-sm font-medium text-zinc-300 capitalize">{label}</span>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-sm text-zinc-200">{count.toLocaleString()}</span>
+          <span className="w-9 text-right text-xs text-zinc-500">{percentage}%</span>
+        </div>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ease-out ${color}`}
+          style={{ width: `${Math.max(percentage, count > 0 ? 2 : 0)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 type BarChartProps = {
   data: { label: string; value: number }[];
   maxValue?: number;
@@ -76,11 +103,8 @@ export function HorizontalBar({ data, maxValue }: HorizontalBarProps) {
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
             <div
-              className="h-full rounded-full transition-all duration-700 ease-out"
-              style={{
-                width: `${(item.count / max) * 100}%`,
-                backgroundColor: item.color.replace("bg-", ""),
-              }}
+              className={`h-full rounded-full transition-all duration-700 ease-out ${item.color}`}
+              style={{ width: `${(item.count / max) * 100}%` }}
             />
           </div>
         </div>

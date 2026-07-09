@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type StatsCardProps = {
   title: string;
   value: string;
@@ -5,6 +7,7 @@ type StatsCardProps = {
   tone?: "emerald" | "amber" | "rose" | "slate" | "blue" | "violet";
   icon?: React.ReactNode;
   subtitle?: string;
+  href?: string;
 };
 
 const toneClasses = {
@@ -25,11 +28,11 @@ const accentClasses = {
   violet: "bg-violet-500",
 };
 
-export function StatsCard({ title, value, change, tone = "slate", icon, subtitle }: StatsCardProps) {
+export function StatsCard({ title, value, change, tone = "slate", icon, subtitle, href }: StatsCardProps) {
   const hasChange = change && change.length > 0;
 
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm transition-all hover:shadow-md hover:border-zinc-700">
+  const content = (
+    <>
       {/* Top accent line */}
       <div className={`absolute inset-x-0 top-0 h-0.5 ${accentClasses[tone]} opacity-60`} />
 
@@ -50,6 +53,29 @@ export function StatsCard({ title, value, change, tone = "slate", icon, subtitle
           </span>
         )}
       </div>
-    </div>
+
+      {href && (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className="absolute bottom-4 right-4 h-3.5 w-3.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L11.29 6.155a.75.75 0 111.06-1.06l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 11-1.06-1.06l3.098-3.095H3.75A.75.75 0 013 10z" clipRule="evenodd" />
+        </svg>
+      )}
+    </>
   );
+
+  const className = "group relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-sm transition-all hover:shadow-md hover:border-zinc-700";
+
+  if (href) {
+    return (
+      <Link href={href} className={`block ${className}`}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Tabs } from "@/components/dashboard/Tabs";
-import { BarChart, HorizontalBar } from "@/components/ui/BarChart";
+import { BarChart, HorizontalBar, ProgressRow } from "@/components/ui/BarChart";
 import type { RoleDistribution, CategoryBreakdown, TimeSeriesPoint } from "../lib/analytics";
 
 type AnalyticsClientProps = {
@@ -50,6 +50,8 @@ const statusLabels: Record<string, string> = {
   dismissed: "Dismissed",
   resolved: "Resolved",
 };
+
+const listPalette = ["bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-cyan-500"];
 
 export function AnalyticsClient(props: AnalyticsClientProps) {
   const [trendTab, setTrendTab] = useState("reports");
@@ -190,22 +192,17 @@ export function AnalyticsClient(props: AnalyticsClientProps) {
           <p className="mt-0.5 text-sm text-zinc-400">
             {props.totalPosts.toLocaleString()} total
           </p>
-          <div className="mt-6 space-y-2.5">
+          <div className="mt-6 space-y-1">
             {props.postTypeEntries.length > 0 ? (
-              props.postTypeEntries.map(([type, count]) => {
-                const pct = props.totalPosts > 0
-                  ? Math.round((count / props.totalPosts) * 100)
-                  : 0;
-                return (
-                  <div key={type} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-zinc-800">
-                    <span className="text-sm font-medium text-zinc-300 capitalize">{type}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-zinc-200">{count.toLocaleString()}</span>
-                      <span className="w-10 text-right text-xs text-zinc-500">{pct}%</span>
-                    </div>
-                  </div>
-                );
-              })
+              props.postTypeEntries.map(([type, count], i) => (
+                <ProgressRow
+                  key={type}
+                  label={type}
+                  count={count}
+                  percentage={props.totalPosts > 0 ? Math.round((count / props.totalPosts) * 100) : 0}
+                  color={listPalette[i % listPalette.length]}
+                />
+              ))
             ) : (
               <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
                 No posts yet
@@ -220,26 +217,26 @@ export function AnalyticsClient(props: AnalyticsClientProps) {
           <p className="mt-0.5 text-sm text-zinc-400">
             User operating markets
           </p>
-          <div className="mt-6 space-y-2.5">
+          <div className="mt-6 space-y-1">
             {props.marketEntries.length > 0 ? (
-              props.marketEntries.slice(0, 10).map(([market, count]) => {
-                const pct = props.totalUsers > 0
-                  ? Math.round((count / props.totalUsers) * 100)
-                  : 0;
-                return (
-                  <div key={market} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-zinc-800">
-                    <span className="text-sm font-medium text-zinc-300">{market}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-zinc-200">{count.toLocaleString()}</span>
-                      <span className="w-10 text-right text-xs text-zinc-500">{pct}%</span>
-                    </div>
-                  </div>
-                );
-              })
+              props.marketEntries.slice(0, 10).map(([market, count], i) => (
+                <ProgressRow
+                  key={market}
+                  label={market}
+                  count={count}
+                  percentage={props.totalUsers > 0 ? Math.round((count / props.totalUsers) * 100) : 0}
+                  color={listPalette[i % listPalette.length]}
+                />
+              ))
             ) : (
               <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
                 No market data
               </div>
+            )}
+            {props.marketEntries.length > 10 && (
+              <p className="px-3 pt-1 text-xs text-zinc-500">
+                +{props.marketEntries.length - 10} more markets
+              </p>
             )}
           </div>
         </div>
@@ -250,22 +247,17 @@ export function AnalyticsClient(props: AnalyticsClientProps) {
           <p className="mt-0.5 text-sm text-zinc-400">
             {props.totalCommunities.toLocaleString()} total
           </p>
-          <div className="mt-6 space-y-2.5">
+          <div className="mt-6 space-y-1">
             {props.communityCategoryEntries.length > 0 ? (
-              props.communityCategoryEntries.map(([cat, count]) => {
-                const pct = props.totalCommunities > 0
-                  ? Math.round((count / props.totalCommunities) * 100)
-                  : 0;
-                return (
-                  <div key={cat} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-zinc-800">
-                    <span className="text-sm font-medium text-zinc-300 capitalize">{cat}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-zinc-200">{count.toLocaleString()}</span>
-                      <span className="w-10 text-right text-xs text-zinc-500">{pct}%</span>
-                    </div>
-                  </div>
-                );
-              })
+              props.communityCategoryEntries.map(([cat, count], i) => (
+                <ProgressRow
+                  key={cat}
+                  label={cat}
+                  count={count}
+                  percentage={props.totalCommunities > 0 ? Math.round((count / props.totalCommunities) * 100) : 0}
+                  color={listPalette[i % listPalette.length]}
+                />
+              ))
             ) : (
               <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
                 No communities yet
@@ -280,22 +272,17 @@ export function AnalyticsClient(props: AnalyticsClientProps) {
           <p className="mt-0.5 text-sm text-zinc-400">
             {props.totalEvents.toLocaleString()} total
           </p>
-          <div className="mt-6 space-y-2.5">
+          <div className="mt-6 space-y-1">
             {props.eventTypeEntries.length > 0 ? (
-              props.eventTypeEntries.map(([type, count]) => {
-                const pct = props.totalEvents > 0
-                  ? Math.round((count / props.totalEvents) * 100)
-                  : 0;
-                return (
-                  <div key={type} className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-zinc-800">
-                    <span className="text-sm font-medium text-zinc-300 capitalize">{type.replace(/_/g, " ")}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-zinc-200">{count.toLocaleString()}</span>
-                      <span className="w-10 text-right text-xs text-zinc-500">{pct}%</span>
-                    </div>
-                  </div>
-                );
-              })
+              props.eventTypeEntries.map(([type, count], i) => (
+                <ProgressRow
+                  key={type}
+                  label={type.replace(/_/g, " ")}
+                  count={count}
+                  percentage={props.totalEvents > 0 ? Math.round((count / props.totalEvents) * 100) : 0}
+                  color={listPalette[i % listPalette.length]}
+                />
+              ))
             ) : (
               <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
                 No events yet

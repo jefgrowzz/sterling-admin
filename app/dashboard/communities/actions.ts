@@ -8,7 +8,10 @@ export type Community = {
   id: string;
   name: string | null;
   description: string | null;
+  category: string | null;
+  visibility: string | null;
   members_count: number;
+  posts_count: number;
   created_at: string | null;
 };
 
@@ -38,7 +41,7 @@ export async function fetchCommunities(
 
   let dataQuery = supabaseAdmin
     .from("communities")
-    .select("id,name,description,members_count,created_at")
+    .select("id,name,description,category,visibility,members_count,posts_count,created_at")
     .order("created_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1);
 
@@ -64,16 +67,29 @@ export async function fetchCommunities(
 export async function fetchCommunityMembers(communityId: string): Promise<CommunityMember[]> {
   const { data, error } = await supabaseAdmin
     .from("community_members")
-    .select("user_id,role,profiles(full_name,username,email)")
+    .select("user_id,role")
     .eq("community_id", communityId)
     .order("role", { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((m: any) => ({
+  const members = data ?? [];
+  if (members.length === 0) return [];
+
+  const userIds = members.map((m: any) => m.user_id);
+  const { data: profiles, error: profilesError } = await supabaseAdmin
+    .from("profiles")
+    .select("id,full_name,username,email")
+    .in("id", userIds);
+
+  if (profilesError) throw new Error(profilesError.message);
+
+  const profileById = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+  return members.map((m: any) => ({
     user_id: m.user_id,
     role: m.role,
-    profile: m.profiles,
+    profile: profileById.get(m.user_id) ?? null,
   }));
 }
 

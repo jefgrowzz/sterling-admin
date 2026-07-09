@@ -49,6 +49,8 @@ function EditCommunityPanel({
   const [form, setForm] = useState({
     name: community.name ?? "",
     description: community.description ?? "",
+    category: community.category ?? "",
+    visibility: community.visibility ?? "public",
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -64,6 +66,8 @@ function EditCommunityPanel({
       const updates = {
         name: form.name || null,
         description: form.description || null,
+        category: form.category || null,
+        visibility: form.visibility || null,
       };
       await updateCommunity(community.id, updates);
       onSaved({ ...community, ...updates });
@@ -118,6 +122,24 @@ function EditCommunityPanel({
                 onChange={(e) => set("description", e.target.value)}
                 placeholder="Community description…"
               />
+            </Field>
+            <Field label="Category">
+              <input
+                className={inputCls}
+                value={form.category}
+                onChange={(e) => set("category", e.target.value)}
+                placeholder="e.g. gaming, trading, general…"
+              />
+            </Field>
+            <Field label="Visibility">
+              <select
+                className={selectCls}
+                value={form.visibility}
+                onChange={(e) => set("visibility", e.target.value)}
+              >
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+              </select>
             </Field>
           </div>
 
@@ -315,8 +337,32 @@ function CommunityRow({
           )}
         </div>
       </td>
+      <td className="px-6 py-4">
+        {community.category ? (
+          <span className="inline-flex rounded-full bg-zinc-800 px-2.5 py-1 text-xs font-medium capitalize text-zinc-300">
+            {community.category}
+          </span>
+        ) : (
+          <span className="text-xs text-zinc-600">—</span>
+        )}
+      </td>
+      <td className="px-6 py-4">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+            community.visibility === "private"
+              ? "bg-violet-500/15 text-violet-300"
+              : "bg-blue-500/15 text-blue-300"
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${community.visibility === "private" ? "bg-violet-400" : "bg-blue-400"}`} />
+          {community.visibility === "private" ? "Private" : "Public"}
+        </span>
+      </td>
       <td className="px-6 py-4 text-sm text-zinc-400">
         {community.members_count}
+      </td>
+      <td className="px-6 py-4 text-sm text-zinc-400">
+        {community.posts_count ?? 0}
       </td>
       <td className="px-6 py-4 text-sm text-zinc-400">
         {community.created_at
@@ -368,6 +414,9 @@ function CommunityRowSkeleton() {
           <div className="h-3 w-48 animate-pulse rounded bg-zinc-700" />
         </div>
       </td>
+      <td className="px-6 py-4"><div className="h-5 w-16 animate-pulse rounded-full bg-zinc-700" /></td>
+      <td className="px-6 py-4"><div className="h-5 w-16 animate-pulse rounded-full bg-zinc-700" /></td>
+      <td className="px-6 py-4"><div className="h-4 w-12 animate-pulse rounded bg-zinc-700" /></td>
       <td className="px-6 py-4"><div className="h-4 w-12 animate-pulse rounded bg-zinc-700" /></td>
       <td className="px-6 py-4"><div className="h-4 w-20 animate-pulse rounded bg-zinc-700" /></td>
       <td className="px-6 py-4"><div className="h-8 w-20 animate-pulse rounded-lg bg-zinc-700" /></td>
@@ -375,7 +424,7 @@ function CommunityRowSkeleton() {
   );
 }
 
-const TABLE_HEADERS = ["Community", "Members", "Created", ""];
+const TABLE_HEADERS = ["Community", "Category", "Visibility", "Members", "Posts", "Created", ""];
 
 function TableHead() {
   return (

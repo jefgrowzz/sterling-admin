@@ -10,7 +10,7 @@ import {
   type AuditLogEntry,
 } from "./actions";
 
-const AUDIT_PAGE_SIZE = 5;
+const AUDIT_PAGE_SIZE = 20;
 
 const ACTION_LABELS: Record<string, string> = {
   ban_user: "User banned",
@@ -57,6 +57,19 @@ function formatTimestamp(dateStr: string): string {
   });
 }
 
+function formatRelativeTime(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return formatTimestamp(dateStr);
+}
+
 function LogRow({ log }: { log: AuditLogEntry }) {
   return (
     <div className="flex items-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-800/60 p-4 transition hover:border-zinc-700">
@@ -66,15 +79,27 @@ function LogRow({ log }: { log: AuditLogEntry }) {
         <p className="mt-0.5 text-sm text-zinc-400">
           {log.detail ?? "—"}
         </p>
-        {log.actor_label && (
-          <p className="mt-0.5 text-xs text-zinc-500">by {log.actor_label}</p>
-        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {log.actor_label && (
+            <p className="text-xs text-zinc-500">by {log.actor_label}</p>
+          )}
+          {log.target_type && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+              {log.target_type}
+              {log.target_id && (
+                <span className="text-zinc-500">· {log.target_id.slice(0, 8)}</span>
+              )}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
         <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${typeColors[log.category]}`}>
           {log.category}
         </span>
-        <span className="whitespace-nowrap text-xs text-zinc-500">{formatTimestamp(log.created_at)}</span>
+        <span className="whitespace-nowrap text-xs text-zinc-500" title={formatTimestamp(log.created_at)}>
+          {formatRelativeTime(log.created_at)}
+        </span>
       </div>
     </div>
   );
@@ -109,6 +134,8 @@ export default function AuditLogsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const category = activeTab === "all" ? undefined : (activeTab as AuditCategory);
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
@@ -120,9 +147,14 @@ export default function AuditLogsPage() {
   }, []);
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     setLoading(true);
     setError(null);
-    fetchAuditLogs(1, category)
+    fetchAuditLogs(1, category, debouncedSearch)
       .then(({ logs, totalCount }) => {
         setLogs(logs);
         setTotalCount(totalCount);
@@ -130,11 +162,11 @@ export default function AuditLogsPage() {
       })
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [activeTab]);
+  }, [activeTab, debouncedSearch]);
 
   function goToPage(page: number) {
     setLoading(true);
-    fetchAuditLogs(page, category)
+    fetchAuditLogs(page, category, debouncedSearch)
       .then(({ logs, totalCount }) => {
         setLogs(logs);
         setTotalCount(totalCount);
@@ -158,16 +190,53 @@ export default function AuditLogsPage() {
       </div>
 
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
-        <Tabs
-          tabs={TABS.map((t) => ({
-            ...t,
-            count: counts ? counts[t.id] : undefined,
-          }))}
-          defaultTab="all"
-          variant="pills"
-          size="sm"
-          onChange={handleTabChange}
-        />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <Tabs
+            tabs={TABS.map((t) => ({
+              ...t,
+              count: counts ? counts[t.id] : undefined,
+            }))}
+            defaultTab="all"
+            variant="pills"
+            size="sm"
+            onChange={handleTabChange}
+          />
+
+          <div className="relative lg:w-72">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+            >
+              <path
+                fillRule="evenodd"
+                d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search actor, action, target…"
+              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 py-2.5 pl-10 pr-4 text-sm text-zinc-50 outline-none transition placeholder:text-zinc-500 focus:border-zinc-500 focus:bg-zinc-900 focus:ring-2 focus:ring-zinc-700"
+            />
+            {search !== debouncedSearch && (
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                <svg
+                  className="h-4 w-4 animate-spin text-zinc-500"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+              </span>
+            )}
+          </div>
+        </div>
 
         {error && (
           <p className="mt-6 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</p>
@@ -179,7 +248,7 @@ export default function AuditLogsPage() {
               Array.from({ length: AUDIT_PAGE_SIZE }).map((_, i) => <LogRowSkeleton key={i} />)
             ) : logs.length === 0 ? (
               <div className="flex h-32 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
-                No audit events found
+                {debouncedSearch ? "No audit events match your search" : "No audit events found"}
               </div>
             ) : (
               logs.map((log) => <LogRow key={log.id} log={log} />)

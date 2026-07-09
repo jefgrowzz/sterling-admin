@@ -33,7 +33,7 @@ export default function UsersPage() {
               { id: "notifications", label: "Notifications", color: "violet" },
             ]}
             defaultTab="users"
-            variant="pills"
+            variant="segmented"
             onChange={(id) => setPageView(id as PageView)}
           />
         </div>
