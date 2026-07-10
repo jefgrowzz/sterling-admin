@@ -6,7 +6,12 @@ import { Tabs } from "@/components/dashboard/Tabs";
 import { Pagination } from "@/components/ui/Pagination";
 import { banUser, type BanType } from "@/app/dashboard/banned-users/actions";
 import { strikeUser } from "@/app/dashboard/moderation/actions";
-import { fetchProfiles, updateProfile, type FetchFilter } from "@/app/dashboard/users/actions";
+import {
+  fetchProfiles,
+  updateProfile,
+  deleteUserAccount,
+  type FetchFilter,
+} from "@/app/dashboard/users/actions";
 import {
   fetchUserDevices,
   fetchDeviceAccounts,
@@ -355,10 +360,12 @@ function EditUserPanel({
   user,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   user: UserProfile;
   onClose: () => void;
   onSaved: (updated: UserProfile) => void;
+  onDeleted: (userId: string) => void;
 }) {
   const [form, setForm] = useState({
     full_name: user.full_name ?? "",
@@ -384,6 +391,11 @@ function EditUserPanel({
 
   const [striking, setStriking] = useState(false);
   const [strikeError, setStrikeError] = useState<string | null>(null);
+
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   function set(key: string, value: string | number) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -424,6 +436,19 @@ function EditUserPanel({
       setStrikeError(e.message);
     } finally {
       setStriking(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteUserAccount(user.id);
+      onDeleted(user.id);
+    } catch (e: any) {
+      setDeleteError(e.message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -642,18 +667,77 @@ function EditUserPanel({
               </div>
             </div>
           )}
+
+          {showDeleteForm && (
+            <div className="mt-6 space-y-4 rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-rose-300">
+                Delete account
+              </p>
+              <p className="text-sm text-zinc-400">
+                This permanently deletes the account for{" "}
+                <span className="font-medium text-zinc-200">
+                  {user.email ?? user.username ?? user.id}
+                </span>
+                . This cannot be undone.
+              </p>
+              <Field label='Type "DELETE" to confirm'>
+                <input
+                  className={inputCls}
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                />
+              </Field>
+
+              {deleteError && (
+                <p className="rounded-xl bg-rose-500/20 px-4 py-3 text-sm text-rose-300">
+                  {deleteError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteForm(false);
+                    setDeleteError(null);
+                    setDeleteConfirmText("");
+                  }}
+                  disabled={deleting}
+                  className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting || deleteConfirmText !== "DELETE"}
+                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Delete account"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        {!showBanForm && (
+        {!showBanForm && !showDeleteForm && (
           <div className="flex justify-between gap-3 border-t border-zinc-800 px-6 py-4">
-            <button
-              onClick={() => setShowBanForm(true)}
-              disabled={saving}
-              className="rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Ban user
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowBanForm(true)}
+                disabled={saving}
+                className="rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Ban user
+              </button>
+              <button
+                onClick={() => setShowDeleteForm(true)}
+                disabled={saving}
+                className="rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Delete account
+              </button>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={onClose}
@@ -859,6 +943,12 @@ function UsersTable({
     setEditingUser(null);
   }
 
+  function handleDeleted(userId: string) {
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setTotalCount((prev) => Math.max(0, prev - 1));
+    setEditingUser(null);
+  }
+
   if (loading && users.length === 0) {
     return <UsersTableSkeleton />;
   }
@@ -878,6 +968,7 @@ function UsersTable({
           user={editingUser}
           onClose={() => setEditingUser(null)}
           onSaved={handleSaved}
+          onDeleted={handleDeleted}
         />
       )}
 

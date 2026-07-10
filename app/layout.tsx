@@ -15,10 +15,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Sterling Admin",
   description: "Visual admin dashboard experience for moderation and user operations",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Sterling Admin",
+  },
 };
 
 export const viewport: Viewport = {
   colorScheme: "dark",
+  themeColor: "#18181b",
 };
 
 export default function RootLayout({

@@ -2,7 +2,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "@/app/dashboard/lib/dal";
-import { logAdminAction } from "@/app/dashboard/lib/audit-log";
+import { logAdminAction, describeUser } from "@/app/dashboard/lib/audit-log";
 import type { UserProfile } from "@/lib/types";
 
 const PAGE_SIZE = 20;
@@ -14,6 +14,8 @@ export async function fetchProfiles(
   filter: FetchFilter = {},
   search = ""
 ): Promise<{ profiles: UserProfile[]; totalCount: number }> {
+  await getCurrentAdmin();
+
   const offset = (page - 1) * PAGE_SIZE;
 
   let countQuery = supabaseAdmin
@@ -37,13 +39,12 @@ export async function fetchProfiles(
     dataQuery = dataQuery.gt("moderation_strike_count", 0);
   }
   if (search.trim()) {
-    const term = search.trim();
-    countQuery = countQuery.or(
-      `full_name.ilike.%${term}%,email.ilike.%${term}%,username.ilike.%${term}%`
-    );
-    dataQuery = dataQuery.or(
-      `full_name.ilike.%${term}%,email.ilike.%${term}%,username.ilike.%${term}%`
-    );
+    // Escape PostgREST filter/ilike-reserved characters so user input can't
+    // inject extra .or() conditions or manipulate the wildcard pattern.
+    const term = search.trim().replace(/[\\%,.():]/g, (c) => `\\${c}`);
+    const orFilter = `full_name.ilike.%${term}%,email.ilike.%${term}%,username.ilike.%${term}%`;
+    countQuery = countQuery.or(orFilter);
+    dataQuery = dataQuery.or(orFilter);
   }
 
   const [{ count }, { data, error }] = await Promise.all([
@@ -95,4 +96,22 @@ export async function updateProfile(
       actorLabel: admin.email,
     });
   }
+}
+
+export async function deleteUserAccount(id: string): Promise<void> {
+  const admin = await getCurrentAdmin();
+  const label = await describeUser(id);
+
+  const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+  if (error) throw new Error(error.message);
+
+  await logAdminAction({
+    category: "admin",
+    action: "delete_user",
+    detail: `Deleted account for ${label}`,
+    targetType: "user",
+    targetId: id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+  });
 }
