@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchMarkets,
   fetchOverridesForDate,
+  fetchAutoArticle,
   fetchCandidates,
   saveOverride,
   clearOverride,
@@ -86,13 +87,40 @@ function MarketRowSkeleton() {
 function MarketRow({
   market,
   override,
+  dateUtc,
   onManage,
 }: {
   market: Market;
   override: NewsOverride | null;
+  dateUtc: string;
   onManage: () => void;
 }) {
   const hasOverride = !!override;
+  const [autoPreview, setAutoPreview] = useState<NewsCandidate | null>(null);
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [autoError, setAutoError] = useState(false);
+
+  useEffect(() => {
+    if (hasOverride) return;
+    let cancelled = false;
+    setAutoLoading(true);
+    setAutoError(false);
+    fetchAutoArticle({ city: market.city, state: market.state, dateUtc })
+      .then((article) => {
+        if (!cancelled) setAutoPreview(article);
+      })
+      .catch(() => {
+        if (!cancelled) setAutoError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setAutoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasOverride, market.city, market.state, dateUtc]);
+
   return (
     <div
       className={`rounded-2xl border-l-4 bg-zinc-800/60 p-4 transition hover:border-l-zinc-600 ${
@@ -109,6 +137,12 @@ function MarketRow({
           </div>
           {override ? (
             <p className="mt-1 line-clamp-1 text-sm text-zinc-400">{override.title}</p>
+          ) : autoLoading ? (
+            <p className="mt-1 text-sm italic text-zinc-500">Loading live story…</p>
+          ) : autoError ? (
+            <p className="mt-1 text-sm italic text-rose-400">Couldn't load live story</p>
+          ) : autoPreview ? (
+            <p className="mt-1 line-clamp-1 text-sm text-zinc-400">{autoPreview.title}</p>
           ) : (
             <p className="mt-1 text-sm italic text-zinc-500">No override — using auto selection</p>
           )}
@@ -233,6 +267,29 @@ function ManagePanel({
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NewsCandidate | null>(null);
 
+  const [livePreview, setLivePreview] = useState<NewsCandidate | null>(null);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (override) return;
+    let cancelled = false;
+    setLivePreviewLoading(true);
+    fetchAutoArticle({ city: market.city, state: market.state, dateUtc })
+      .then((article) => {
+        if (!cancelled) setLivePreview(article);
+      })
+      .catch(() => {
+        if (!cancelled) setLivePreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLivePreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [override, market.city, market.state, dateUtc]);
+
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -341,6 +398,29 @@ function ManagePanel({
                 >
                   {clearing ? "Clearing…" : "Clear override"}
                 </button>
+              </div>
+            </div>
+          ) : livePreviewLoading ? (
+            <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
+              Loading live story…
+            </div>
+          ) : livePreview ? (
+            <div className="rounded-2xl border border-zinc-700 bg-zinc-800/60 p-4">
+              <div className="flex gap-4">
+                {livePreview.image_url ? (
+                  <img src={livePreview.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-zinc-700 object-cover" />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-zinc-50">{livePreview.title}</p>
+                  {livePreview.description && (
+                    <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{livePreview.description}</p>
+                  )}
+                  <div className="mt-1.5 flex items-center gap-2 text-[11px] text-zinc-500">
+                    {livePreview.source && <span>{livePreview.source}</span>}
+                    <span>·</span>
+                    <span>Auto-selected — mobile app is using this now</span>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
@@ -641,6 +721,7 @@ export default function NewsPage() {
                 key={marketKey(market)}
                 market={market}
                 override={overrideByMarket.get(marketKey(market)) ?? null}
+                dateUtc={dateUtc}
                 onManage={() => setManaging(market)}
               />
             ))

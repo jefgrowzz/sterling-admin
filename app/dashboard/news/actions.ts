@@ -198,6 +198,86 @@ export async function fetchOverridesForDate(dateUtc: string): Promise<NewsOverri
   return (data ?? []) as NewsOverride[];
 }
 
+// DUPLICATED LOGIC — 3 copies, no shared package between repos:
+//   1. this file (admin)
+//   2. resolve-market-news/index.ts (app repo, edge function)
+//   3. src/lib/api/newsApi.ts (app repo, client fallback — exported as
+//      sortMarketNewsCandidates/getDailyArticleIndex)
+// Ported byte-for-byte so admin's "auto" preview picks the exact same article
+// the app would. If the ranking/rotation logic ever changes, all 3 copies
+// must be updated together or admin will silently drift out of parity.
+function getLocationHash(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function sortCandidates<T extends { publishedAt: string; url: string }>(articles: T[]): T[] {
+  return [...articles].sort((a, b) => {
+    const pubA = a.publishedAt || "";
+    const pubB = b.publishedAt || "";
+    if (pubA !== pubB) return pubB.localeCompare(pubA);
+    return a.url.localeCompare(b.url);
+  });
+}
+
+function getDailyArticleIndex(count: number, locationLabel: string, dateUtc: string): number {
+  if (count <= 1) return 0;
+  const utcDayNumber = Math.floor(new Date(`${dateUtc}T00:00:00.000Z`).getTime() / 86_400_000);
+  const locationOffset = getLocationHash(locationLabel) % count;
+  return (utcDayNumber + locationOffset) % count;
+}
+
+function locationLabel(city: string, state: string | null | undefined): string {
+  return [city, state].filter(Boolean).join(", ");
+}
+
+// Reads the story actually being served for a market on a given date when no
+// override is set, straight from market_news_articles — the same table
+// resolve-market-news (and the client-side fallback in the mobile app) upsert
+// into and select from — then replicates the app's exact daily-rotation
+// selection so this mirrors live behavior instead of approximating it.
+export async function fetchAutoArticle(params: {
+  city: string;
+  state?: string | null;
+  dateUtc: string;
+}): Promise<NewsCandidate | null> {
+  const cityNorm = normalize(params.city);
+  const stateNorm = normalize(normalizeStateAbbreviation(params.state));
+
+  const { data, error } = await supabaseAdmin
+    .from("market_news_articles")
+    .select("article_id,article_url,title,description,content,source,image_url,published_at")
+    .eq("city_norm", cityNorm)
+    .eq("state_norm", stateNorm);
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return null;
+
+  type Row = (typeof data)[number] & { publishedAt: string; url: string };
+  const candidates: Row[] = data.map((row: any) => ({
+    ...row,
+    publishedAt: row.published_at ?? "",
+    url: row.article_url,
+  }));
+
+  const sorted = sortCandidates(candidates);
+  const index = getDailyArticleIndex(sorted.length, locationLabel(params.city, params.state), params.dateUtc);
+  const picked = sorted[index];
+
+  return {
+    article_id: picked.article_id,
+    article_url: picked.article_url,
+    title: picked.title,
+    description: picked.description,
+    content: picked.content,
+    source: picked.source,
+    image_url: picked.image_url,
+    published_at: picked.published_at,
+  };
+}
+
 export async function fetchCandidates(params: {
   city: string;
   state?: string | null;
