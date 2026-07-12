@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import type { ReportStatus, Report } from "@/lib/types";
 import { Tabs } from "@/components/dashboard/Tabs";
 import { Pagination } from "@/components/ui/Pagination";
@@ -34,6 +34,16 @@ import {
   type ActiveDeviceBan,
   type BanType,
 } from "@/app/dashboard/banned-users/actions";
+import {
+  fetchModerationAlerts,
+  resolveModerationAlert,
+  unbanUserFromAlert,
+  fetchRecentUserActivity,
+  type ModerationAlert,
+  type AlertActionType,
+  type AlertSeverity,
+  type ActionEvent,
+} from "./alerts-actions";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -1367,13 +1377,283 @@ function BannedUsersView() {
 }
 
 // ---------------------------------------------------------------------------
+// Automated alerts (moderation_alerts)
+// ---------------------------------------------------------------------------
+
+const ALERT_SEVERITY_BADGE: Record<AlertSeverity, string> = {
+  severe: "bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40",
+  standard: "bg-amber-500/15 text-amber-300",
+};
+
+const ALERT_ACTION_LABELS: Record<AlertActionType, string> = {
+  message: "Messages",
+  post: "Posts",
+  comment: "Comments",
+};
+
+const ALERT_HEADERS = ["User", "Trigger", "Count", "Severity", "Timeout", "Flagged", "Actions"];
+
+function AlertsTableSkeleton() {
+  return <TableSkeleton headers={ALERT_HEADERS} />;
+}
+
+function ActionEventLabel({ event }: { event: ActionEvent }) {
+  const label = ALERT_ACTION_LABELS[event.action_type as AlertActionType] ?? event.action_type;
+  return (
+    <li className="flex items-center justify-between gap-4 py-1.5">
+      <span className="text-zinc-300">{label}</span>
+      <span className="text-xs text-zinc-500">{timeAgo(event.created_at)}</span>
+    </li>
+  );
+}
+
+function AlertActivityRow({ userId }: { userId: string }) {
+  const [events, setEvents] = useState<ActionEvent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRecentUserActivity(userId)
+      .then((data) => { if (!cancelled) setEvents(data); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load activity"); });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  return (
+    <tr className="bg-zinc-950/40">
+      <td colSpan={ALERT_HEADERS.length} className="px-6 py-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Recent activity</p>
+        {error ? (
+          <p className="text-sm text-rose-300">{error}</p>
+        ) : events === null ? (
+          <p className="text-sm text-zinc-500">Loading…</p>
+        ) : events.length === 0 ? (
+          <p className="text-sm text-zinc-500">No recent recorded activity for this user.</p>
+        ) : (
+          <ul className="divide-y divide-zinc-800/60">
+            {events.map((event) => (
+              <ActionEventLabel key={event.id} event={event} />
+            ))}
+          </ul>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function AlertsTable({
+  alerts,
+  busyId,
+  expandedId,
+  onResolve,
+  onUnban,
+  onToggleDetails,
+}: {
+  alerts: ModerationAlert[];
+  busyId: string | null;
+  expandedId: string | null;
+  onResolve: (alertId: string, status: "reviewed" | "dismissed") => void;
+  onUnban: (alert: ModerationAlert) => void;
+  onToggleDetails: (alertId: string) => void;
+}) {
+  return (
+    <div className="-mx-6 -mb-6 overflow-x-auto">
+      <table className="min-w-full divide-y divide-zinc-800 text-sm">
+        <thead className="bg-zinc-800/60 text-left text-zinc-400">
+          <tr>
+            {ALERT_HEADERS.map((h) => (
+              <th key={h} className="px-6 py-4 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-800">
+          {alerts.map((alert) => {
+            const initials = getInitials(null, alert.user_username);
+            const color = avatarColor(alert.user_id);
+            const busy = busyId === alert.id;
+            return (
+              <React.Fragment key={alert.id}>
+              <tr className="hover:bg-zinc-800/60 transition-colors">
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${color}`}>
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-zinc-50">{alert.user_username ?? "Unknown user"}</p>
+                      <p className="truncate text-xs text-zinc-500">{alert.user_email ?? "—"}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-zinc-400">
+                  {ALERT_ACTION_LABELS[alert.action_type] ?? alert.action_type}
+                  <span className="ml-1 text-xs text-zinc-500">({alert.window_label})</span>
+                </td>
+                <td className="px-6 py-4 text-zinc-50">{alert.action_count}</td>
+                <td className="px-6 py-4">
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${ALERT_SEVERITY_BADGE[alert.severity]}`}>
+                    {alert.severity}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-zinc-400">
+                  {alert.details?.timeout_minutes ? `${alert.details.timeout_minutes}m` : "—"}
+                </td>
+                <td className="px-6 py-4 text-zinc-400">{timeAgo(alert.created_at)}</td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => onToggleDetails(alert.id)}
+                      className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 transition hover:border-violet-500/50 hover:bg-violet-500/20"
+                    >
+                      {expandedId === alert.id ? "Hide" : "Details"}
+                    </button>
+                    <button
+                      onClick={() => onUnban(alert)}
+                      disabled={busy}
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Unban
+                    </button>
+                    <button
+                      onClick={() => onResolve(alert.id, "reviewed")}
+                      disabled={busy}
+                      className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-300 transition hover:border-blue-500/50 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Reviewed
+                    </button>
+                    <button
+                      onClick={() => onResolve(alert.id, "dismissed")}
+                      disabled={busy}
+                      className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {expandedId === alert.id && <AlertActivityRow userId={alert.user_id} />}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ModerationAlertsView() {
+  const [alerts, setAlerts] = useState<ModerationAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
+  const refreshData = useCallback(() => {
+    setLoading(true);
+    setLastRefresh(new Date());
+    fetchModerationAlerts()
+      .then(setAlerts)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load alerts"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
+  async function handleResolve(alertId: string, status: "reviewed" | "dismissed") {
+    setBusyId(alertId);
+    setError(null);
+    try {
+      await resolveModerationAlert(alertId, status);
+      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update alert");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function handleToggleDetails(alertId: string) {
+    setExpandedId((prev) => (prev === alertId ? null : alertId));
+  }
+
+  async function handleUnban(alert: ModerationAlert) {
+    setBusyId(alert.id);
+    setError(null);
+    try {
+      await unbanUserFromAlert(alert.user_id);
+      await resolveModerationAlert(alert.id, "reviewed");
+      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to unban user");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+      <div className="flex items-start justify-between">
+        <p className="text-xs text-zinc-500">Last updated: {lastRefresh.toLocaleTimeString()}</p>
+        <button
+          onClick={refreshData}
+          disabled={loading}
+          className="rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      <div className="mt-4">
+        {loading ? (
+          <AlertsTableSkeleton />
+        ) : alerts.length === 0 ? (
+          <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
+            No pending automated abuse alerts
+          </div>
+        ) : (
+          <AlertsTable
+            alerts={alerts}
+            busyId={busyId}
+            expandedId={expandedId}
+            onResolve={handleResolve}
+            onUnban={handleUnban}
+            onToggleDetails={handleToggleDetails}
+          />
+        )}
+      </div>
+
+      {error && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300 shadow-lg">
+          {error}
+          <button onClick={() => setError(null)} className="ml-3 text-rose-200 hover:text-rose-100">
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-type PageView = "reports" | "flagged" | "banned";
+type PageView = "reports" | "flagged" | "banned" | "alerts";
 
 export default function ModerationPage() {
   const [pageView, setPageView] = useState<PageView>("reports");
+  const [alertCount, setAlertCount] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    fetchModerationAlerts()
+      .then((alerts) => setAlertCount(alerts.length))
+      .catch(() => setAlertCount(undefined));
+  }, [pageView]);
 
   return (
     <div className="space-y-6">
@@ -1381,21 +1661,30 @@ export default function ModerationPage() {
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-400">Moderation</p>
         <h2 className="mt-2 text-2xl font-semibold text-zinc-50">
-          {pageView === "reports" ? "Moderation overview" : pageView === "flagged" ? "Priority review queue" : "Banned users"}
+          {pageView === "reports"
+            ? "Moderation overview"
+            : pageView === "flagged"
+            ? "Priority review queue"
+            : pageView === "banned"
+            ? "Banned users"
+            : "Automated abuse alerts"}
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
           {pageView === "reports"
             ? "Live counts from the database. Review and act on pending reports directly from this queue."
             : pageView === "flagged"
             ? "Accounts with active moderation strikes and/or rule-based bot signals (device sharing, posting bursts, duplicate content), ordered by combined severity. Use the review panel to inspect reports, signals, and adjust strikes."
-            : "Manage active user and device bans. Review ban reasons, expiry, and unban when necessary."}
+            : pageView === "banned"
+            ? "Manage active user and device bans. Review ban reasons, expiry, and unban when necessary."
+            : "Rate-limit signals triggered automatically by the database when a user exceeds message, post, or comment velocity thresholds. Confirm the timeout, unban early, or dismiss false positives."}
         </p>
         <div className="mt-5 border-t border-zinc-800 pt-5">
           <Tabs
             tabs={[
-              { id: "reports", label: "Reports",         color: "amber" },
+              { id: "reports", label: "Reports",          color: "amber" },
               { id: "flagged", label: "Flagged accounts", color: "rose"  },
               { id: "banned",  label: "Banned users",     color: "blue"  },
+              { id: "alerts",  label: "Automated alerts", color: "violet", count: alertCount },
             ]}
             defaultTab="reports"
             variant="segmented"
@@ -1407,6 +1696,7 @@ export default function ModerationPage() {
       {pageView === "reports" && <ReportsView />}
       {pageView === "flagged" && <FlaggedAccountsView />}
       {pageView === "banned" && <BannedUsersView />}
+      {pageView === "alerts" && <ModerationAlertsView />}
     </div>
   );
 }
