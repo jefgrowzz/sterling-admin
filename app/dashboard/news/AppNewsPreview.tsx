@@ -17,6 +17,7 @@ type AppNewsPreviewProps = {
   story: AppNewsPreviewStory;
   stateLabel: string;
   compact?: boolean;
+  showFullStory?: boolean;
 };
 
 function formatPublishedAge(iso: string | null | undefined): string {
@@ -31,7 +32,12 @@ function formatPublishedAge(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function AppNewsPreview({ story, stateLabel, compact = false }: AppNewsPreviewProps) {
+export function AppNewsPreview({
+  story,
+  stateLabel,
+  compact = false,
+  showFullStory = true,
+}: AppNewsPreviewProps) {
   const preview = useMemo(
     () => getAppMapCardPreview(story.title, story.description),
     [story.title, story.description],
@@ -160,7 +166,7 @@ export function AppNewsPreview({ story, stateLabel, compact = false }: AppNewsPr
         </details>
       ) : null}
 
-      {story.article_url ? (
+      {showFullStory && story.article_url ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">

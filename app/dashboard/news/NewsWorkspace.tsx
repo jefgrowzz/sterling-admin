@@ -14,6 +14,7 @@ import {
 } from "./actions";
 import { marketLabel } from "./state-labels";
 import { AppNewsPreview } from "./AppNewsPreview";
+import { AppNewsPagePreview } from "./AppNewsPagePreview";
 import { isNewsApiTruncatedContent, sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
 
 function formatDate(dateStr: string): string {
@@ -371,6 +372,13 @@ export function NewsWorkspace({
     }
   }
 
+  const previewBodyText =
+    draft?.content ??
+    sanitizeStoredArticleContent(
+      override?.content ?? livePreview?.content ?? null,
+      previewStory?.title,
+    );
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-zinc-950">
       {/* Header */}
@@ -442,12 +450,17 @@ export function NewsWorkspace({
 
       {/* Main workspace */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto grid w-full max-w-[1600px] min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="mx-auto grid h-full min-h-0 w-full max-w-[1600px] grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.85fr)]">
           {/* Left: editor / current story */}
-          <main ref={editorRef} className="min-h-0 overflow-y-auto border-b border-zinc-800 lg:border-b-0 lg:border-r">
-            <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-              {isEditing && draft ? (
-                <>
+          <main
+            ref={editorRef}
+            className={`min-h-0 lg:border-r lg:border-zinc-800 ${
+              isEditing ? "flex flex-col overflow-hidden" : "overflow-y-auto border-b border-zinc-800 lg:border-b-0"
+            }`}
+          >
+            {isEditing && draft ? (
+              <>
+                <div className="shrink-0 space-y-5 overflow-y-auto border-b border-zinc-800 p-4 sm:p-6 lg:p-8">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Editor</p>
                     <h2 className="mt-1 text-2xl font-semibold text-zinc-50">
@@ -473,40 +486,10 @@ export function NewsWorkspace({
                     <textarea
                       value={draft.description ?? ""}
                       onChange={(e) => setDraft({ ...draft, description: e.target.value || null })}
-                      rows={4}
-                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
+                      rows={3}
+                      className="w-full resize-y rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
                     />
                   </label>
-
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <span className="text-sm font-medium text-zinc-300">Full article</span>
-                        <p className="text-xs text-zinc-500">Body text on the in-app news page.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleLoadFullContent}
-                        disabled={contentLoading || !draft.article_url}
-                        className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 disabled:opacity-40"
-                      >
-                        {contentLoading ? "Loading from URL…" : "Load from source URL"}
-                      </button>
-                    </div>
-                    <textarea
-                      value={draft.content ?? ""}
-                      onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
-                      rows={14}
-                      disabled={contentLoading}
-                      placeholder={
-                        contentLoading
-                          ? "Fetching the full article from the source URL…"
-                          : "Full article text — loaded automatically when NewsAPI only had a snippet."
-                      }
-                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 font-mono text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2 disabled:opacity-60"
-                    />
-                    {contentError ? <p className="text-sm text-rose-400">{contentError}</p> : null}
-                  </div>
 
                   <label className="block space-y-2">
                     <span className="text-sm font-medium text-zinc-300">Internal note (optional)</span>
@@ -526,107 +509,157 @@ export function NewsWorkspace({
                       </a>
                     </p>
                   ) : null}
-                </>
-              ) : livePreviewLoading ? (
-                <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-zinc-800 bg-zinc-900/50">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
-                  <p className="text-sm text-zinc-500">Loading today's story…</p>
+
+                  {error ? (
+                    <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
+                  ) : null}
                 </div>
-              ) : previewStory ? (
-                <>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Live story</p>
-                    <h2 className="mt-2 text-2xl font-semibold leading-snug text-zinc-50 sm:text-3xl">
-                      {previewStory.title}
-                    </h2>
-                    <p className="mt-3 text-sm text-zinc-400">
-                      {override
-                        ? "This manual override is what users see in the app right now."
-                        : selectionSource === "auto"
-                          ? "Auto-selected by the same resolver the mobile app uses."
-                          : "Resolved story for this state and date."}
+
+                <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-6 lg:p-8">
+                  <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-sm font-medium text-zinc-300">Full article</span>
+                      <p className="text-xs text-zinc-500">
+                        Body text on the in-app news page — preview updates on the right as you type.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLoadFullContent}
+                      disabled={contentLoading || !draft.article_url}
+                      className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 disabled:opacity-40"
+                    >
+                      {contentLoading ? "Loading from URL…" : "Load from source URL"}
+                    </button>
+                  </div>
+                  {contentError ? <p className="mb-2 shrink-0 text-sm text-rose-400">{contentError}</p> : null}
+                  <textarea
+                    value={draft.content ?? ""}
+                    onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
+                    disabled={contentLoading}
+                    placeholder={
+                      contentLoading
+                        ? "Fetching the full article from the source URL…"
+                        : "Full article text — loaded automatically when NewsAPI only had a snippet."
+                    }
+                    className="min-h-[280px] w-full flex-1 resize-none rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-4 font-mono text-sm leading-7 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2 disabled:opacity-60 lg:min-h-0"
+                    spellCheck
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+                {livePreviewLoading ? (
+                  <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-zinc-800 bg-zinc-900/50">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
+                    <p className="text-sm text-zinc-500">Loading today's story…</p>
+                  </div>
+                ) : previewStory ? (
+                  <>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Live story</p>
+                      <h2 className="mt-2 text-2xl font-semibold leading-snug text-zinc-50 sm:text-3xl">
+                        {previewStory.title}
+                      </h2>
+                      <p className="mt-3 text-sm text-zinc-400">
+                        {override
+                          ? "This manual override is what users see in the app right now."
+                          : selectionSource === "auto"
+                            ? "Auto-selected by the same resolver the mobile app uses."
+                            : "Resolved story for this state and date."}
+                      </p>
+                    </div>
+
+                    {previewStory.image_url ? (
+                      <img
+                        src={previewStory.image_url}
+                        alt=""
+                        className="max-h-72 w-full rounded-3xl border border-zinc-800 object-cover"
+                      />
+                    ) : null}
+
+                    {previewStory.description ? (
+                      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-5">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Map preview</p>
+                        <p className="mt-2 text-sm leading-7 text-zinc-300">{previewStory.description}</p>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleEditCurrent}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 py-4 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                      </svg>
+                      Edit or replace this story
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-zinc-800 bg-zinc-900/50 p-8 text-center">
+                    <p className="text-base font-medium text-zinc-300">No story for this date yet</p>
+                    <p className="max-w-sm text-sm text-zinc-500">
+                      Pick an alternative from the list on the right, or refresh once the app has requested news for {stateLabel}.
                     </p>
                   </div>
+                )}
 
-                  {previewStory.image_url ? (
-                    <img
-                      src={previewStory.image_url}
-                      alt=""
-                      className="max-h-72 w-full rounded-3xl border border-zinc-800 object-cover"
-                    />
-                  ) : null}
-
-                  {previewStory.description ? (
-                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Map preview</p>
-                      <p className="mt-2 text-sm leading-7 text-zinc-300">{previewStory.description}</p>
-                    </div>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={handleEditCurrent}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 py-4 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                      <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                    </svg>
-                    Edit or replace this story
-                  </button>
-                </>
-              ) : (
-                <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-zinc-800 bg-zinc-900/50 p-8 text-center">
-                  <p className="text-base font-medium text-zinc-300">No story for this date yet</p>
-                  <p className="max-w-sm text-sm text-zinc-500">
-                    Pick an alternative from the list on the right, or refresh once the app has requested news for {stateLabel}.
-                  </p>
-                </div>
-              )}
-
-              {error ? (
-                <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
-              ) : null}
-            </div>
+                {error ? (
+                  <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
+                ) : null}
+              </div>
+            )}
           </main>
 
-          {/* Right: preview + candidates */}
-          <aside className="flex min-h-0 flex-col overflow-hidden bg-zinc-900/40">
-            <div className="shrink-0 border-b border-zinc-800 px-4 py-4 sm:px-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">App preview</p>
-              <p className="mt-1 text-sm text-zinc-400">How this story appears on the map card.</p>
-            </div>
-
-            <div className="shrink-0 overflow-y-auto border-b border-zinc-800 px-4 py-4 sm:px-6">
+          {/* Right: scrollable previews + candidates */}
+          <aside className="min-h-0 overflow-y-auto overscroll-contain bg-zinc-900/40">
+            <div className="space-y-6 p-4 sm:p-6">
               {previewStory ? (
-                <AppNewsPreview
-                  story={toPreviewStory(previewStory)}
-                  stateLabel={stateLabel}
-                  compact
-                />
+                <section>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                    Map card preview
+                  </p>
+                  <AppNewsPreview
+                    story={toPreviewStory(previewStory)}
+                    stateLabel={stateLabel}
+                    compact
+                    showFullStory={false}
+                  />
+                </section>
               ) : (
                 <div className="rounded-2xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-500">
                   Preview will appear when a story is selected
                 </div>
               )}
-            </div>
 
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-4 py-3 sm:px-6">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Alternatives</p>
-                  <p className="text-[11px] text-zinc-600">Tap one to start editing it</p>
+              {previewStory ? (
+                <section>
+                  <AppNewsPagePreview
+                    story={toPreviewStory(previewStory)}
+                    stateLabel={stateLabel}
+                    bodyText={previewBodyText}
+                    loading={contentLoading}
+                  />
+                </section>
+              ) : null}
+
+              <section>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Alternatives</p>
+                    <p className="text-[11px] text-zinc-600">Tap one to start editing it</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefreshCandidates}
+                    disabled={candidatesLoading}
+                    className="rounded-lg border border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-40"
+                  >
+                    Refresh
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRefreshCandidates}
-                  disabled={candidatesLoading}
-                  className="rounded-lg border border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-40"
-                >
-                  Refresh
-                </button>
-              </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6">
                 <div className="space-y-2 pb-4">
                   {candidatesLoading ? (
                     Array.from({ length: 4 }).map((_, i) => (
@@ -648,7 +681,7 @@ export function NewsWorkspace({
                     ))
                   )}
                 </div>
-              </div>
+              </section>
             </div>
           </aside>
         </div>
