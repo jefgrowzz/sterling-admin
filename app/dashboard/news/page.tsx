@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   fetchMarkets,
   fetchOverridesForDate,
   fetchResolvedNews,
   fetchCandidates,
+  fetchFullArticlePreview,
   saveOverride,
   clearOverride,
   addMarket,
@@ -275,6 +276,166 @@ function toPreviewStory(
   };
 }
 
+function toEditableCandidate(story: {
+  article_id?: string | null;
+  article_url?: string | null;
+  title?: string | null;
+  description?: string | null;
+  content?: string | null;
+  source?: string | null;
+  image_url?: string | null;
+  published_at?: string | null;
+} | null): NewsCandidate | null {
+  if (!story?.title?.trim()) return null;
+  const articleUrl = (story.article_url ?? story.article_id ?? "").trim();
+  if (!articleUrl) return null;
+  return {
+    article_id: story.article_id ?? articleUrl,
+    article_url: articleUrl,
+    title: story.title.trim(),
+    description: story.description ?? null,
+    content: story.content ?? null,
+    source: story.source ?? null,
+    image_url: story.image_url ?? null,
+    published_at: story.published_at ?? null,
+  };
+}
+
+function StoryEditorForm({
+  draft,
+  onChange,
+  onSave,
+  onCancel,
+  saving,
+  isOverride,
+  stateLabel,
+  reason,
+  onReasonChange,
+}: {
+  draft: NewsCandidate;
+  onChange: (next: NewsCandidate) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  isOverride: boolean;
+  stateLabel: string;
+  reason: string;
+  onReasonChange: (value: string) => void;
+}) {
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState<string | null>(null);
+
+  async function handleLoadFullContent() {
+    if (!draft.article_url) return;
+    setContentLoading(true);
+    setContentError(null);
+    try {
+      const result = await fetchFullArticlePreview({
+        url: draft.article_url,
+        title: draft.title,
+      });
+      if (result.error || !result.text) {
+        setContentError(result.error ?? "Could not load full article text");
+        return;
+      }
+      onChange({ ...draft, content: result.text });
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Failed to load full article");
+    } finally {
+      setContentLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+          {isOverride ? "Edit story" : "Override auto selection"}
+        </h4>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || !draft.title.trim() || !draft.article_url}
+            className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:opacity-40"
+          >
+            {saving ? "Saving…" : isOverride ? "Save changes" : "Save as override"}
+          </button>
+        </div>
+      </div>
+
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-zinc-400">Title</span>
+        <input
+          value={draft.title}
+          onChange={(e) => onChange({ ...draft, title: e.target.value })}
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
+        />
+      </label>
+
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-zinc-400">Description (map card preview)</span>
+        <textarea
+          value={draft.description ?? ""}
+          onChange={(e) => onChange({ ...draft, description: e.target.value || null })}
+          rows={3}
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
+        />
+      </label>
+
+      <div className="block">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-zinc-400">Full article body (news page)</span>
+          <button
+            type="button"
+            onClick={handleLoadFullContent}
+            disabled={contentLoading || !draft.article_url}
+            className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-40"
+          >
+            {contentLoading ? "Loading…" : "Load from URL"}
+          </button>
+        </div>
+        <textarea
+          value={draft.content ?? ""}
+          onChange={(e) => onChange({ ...draft, content: e.target.value || null })}
+          rows={8}
+          placeholder="Paste or load the full article text shown in the app news page…"
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
+        />
+        {contentError ? <p className="mt-1.5 text-xs text-rose-400">{contentError}</p> : null}
+      </div>
+
+      {draft.article_url ? (
+        <p className="text-[11px] text-zinc-500 break-all">
+          Source URL:{" "}
+          <a href={draft.article_url} target="_blank" rel="noreferrer" className="text-zinc-400 hover:text-zinc-200">
+            {draft.article_url}
+          </a>
+        </p>
+      ) : null}
+
+      <AppNewsPreview story={toPreviewStory(draft)} stateLabel={stateLabel} compact />
+
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-zinc-400">Reason (optional)</span>
+        <input
+          value={reason}
+          onChange={(e) => onReasonChange(e.target.value)}
+          placeholder="Why override the auto selection?"
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
+        />
+      </label>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Manage panel (slide-over) — view/save/clear the override for one market+date
 // ---------------------------------------------------------------------------
@@ -293,11 +454,12 @@ function ManagePanel({
   onChanged: (override: NewsOverride | null, message: string) => void;
 }) {
   const [override, setOverride] = useState<NewsOverride | null>(initialOverride);
+  const panelScrollRef = useRef<HTMLDivElement>(null);
 
   const [candidates, setCandidates] = useState<NewsCandidate[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<NewsCandidate | null>(null);
+  const [draft, setDraft] = useState<NewsCandidate | null>(null);
 
   const [livePreview, setLivePreview] = useState<NewsCandidate | null>(null);
   const [livePreviewLoading, setLivePreviewLoading] = useState(true);
@@ -313,6 +475,26 @@ function ManagePanel({
         published_at: override.published_at,
       }
     : livePreview;
+
+  function scrollPanelToTop() {
+    panelScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function beginEditing(story: Parameters<typeof toEditableCandidate>[0]) {
+    const editable = toEditableCandidate(story);
+    if (!editable) {
+      setError("This story is missing a title or URL and cannot be edited.");
+      return;
+    }
+    setDraft(editable);
+    setError(null);
+    requestAnimationFrame(() => scrollPanelToTop());
+  }
+
+  function cancelEditing() {
+    setDraft(null);
+    setError(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -373,36 +555,35 @@ function ManagePanel({
   }
 
   function handleEditCurrentStory() {
-    const story = override
-      ? {
-          article_id: override.article_id,
-          article_url: override.article_url ?? "",
-          title: override.title,
-          description: override.description,
-          content: override.content,
-          source: override.source,
-          image_url: override.image_url,
-          published_at: override.published_at,
-        }
-      : livePreview;
-    if (!story?.article_url) return;
-    setSelected(story);
-    setError(null);
+    beginEditing(
+      override
+        ? {
+            article_id: override.article_id,
+            article_url: override.article_url,
+            title: override.title,
+            description: override.description,
+            content: override.content,
+            source: override.source,
+            image_url: override.image_url,
+            published_at: override.published_at,
+          }
+        : livePreview,
+    );
   }
 
   async function handleSave() {
-    if (!selected) return;
+    if (!draft) return;
     setSaving(true);
     setError(null);
     try {
       const result = await saveOverride({
         dateUtc,
         state: market.state,
-        candidate: selected,
+        candidate: draft,
         reason,
       });
       setOverride(result);
-      setSelected(null);
+      setDraft(null);
       setReason("");
       setSelectionSource("override");
       onChanged(result, `Saved override for ${marketLabel(market.state)}`);
@@ -443,13 +624,25 @@ function ManagePanel({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div ref={panelScrollRef} className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Current story</h3>
             <OverrideBadge hasOverride={!!override} />
           </div>
 
-          {override ? (
+          {draft ? (
+            <StoryEditorForm
+              draft={draft}
+              onChange={setDraft}
+              onSave={handleSave}
+              onCancel={cancelEditing}
+              saving={saving}
+              isOverride={!!override}
+              stateLabel={marketLabel(market.state)}
+              reason={reason}
+              onReasonChange={setReason}
+            />
+          ) : override ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
                 <div className="flex gap-4">
@@ -473,12 +666,14 @@ function ManagePanel({
                   </div>
                   <div className="flex shrink-0 flex-col gap-2">
                     <button
+                      type="button"
                       onClick={handleEditCurrentStory}
                       className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
                     >
                       Edit story
                     </button>
                     <button
+                      type="button"
                       onClick={handleClear}
                       disabled={clearing}
                       className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:opacity-40"
@@ -527,6 +722,7 @@ function ManagePanel({
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={handleEditCurrentStory}
                     className="h-fit shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20"
                   >
@@ -545,11 +741,12 @@ function ManagePanel({
           <div className="mt-6 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Candidate stories</h3>
             <button
+              type="button"
               onClick={handleFetchCandidates}
               disabled={candidatesLoading}
               className="rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-40"
             >
-              {candidatesLoading ? "Fetching…" : "Fetch candidates"}
+              {candidatesLoading ? "Fetching…" : "Refresh candidates"}
             </button>
           </div>
 
@@ -567,55 +764,13 @@ function ManagePanel({
                 <CandidateCard
                   key={c.article_id ?? c.article_url ?? i}
                   candidate={c}
-                  selected={selected?.article_url === c.article_url}
+                  selected={draft?.article_url === c.article_url}
                   isCurrent={!!effectiveStory?.article_url && effectiveStory.article_url === c.article_url}
-                  onSelect={() => setSelected(c)}
+                  onSelect={() => beginEditing(c)}
                 />
               ))
             )}
           </div>
-
-          {selected && (
-            <div className="mt-4 space-y-4 border-t border-zinc-800 pt-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                {override ? "Edit override" : "Override auto selection"}
-              </h4>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-zinc-400">Title</span>
-                <input
-                  value={selected.title}
-                  onChange={(e) => setSelected({ ...selected, title: e.target.value })}
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-zinc-400">Description</span>
-                <textarea
-                  value={selected.description ?? ""}
-                  onChange={(e) => setSelected({ ...selected, description: e.target.value || null })}
-                  rows={4}
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
-                />
-              </label>
-              <AppNewsPreview story={toPreviewStory(selected)} stateLabel={marketLabel(market.state)} compact />
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-zinc-400">Reason (optional)</span>
-                <input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="Why override the auto selection?"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
-                />
-              </label>
-              <button
-                onClick={handleSave}
-                disabled={saving || !selected.title.trim() || !selected.article_url}
-                className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:opacity-40"
-              >
-                {saving ? "Saving…" : override ? "Save changes" : "Save as override"}
-              </button>
-            </div>
-          )}
 
           {error && (
             <div className="mt-4 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
@@ -623,7 +778,7 @@ function ManagePanel({
         </div>
 
         <div className="border-t border-zinc-800 px-6 py-4">
-          <button onClick={onClose} className="w-full rounded-full border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800">
+          <button type="button" onClick={onClose} className="w-full rounded-full border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800">
             Close
           </button>
         </div>
