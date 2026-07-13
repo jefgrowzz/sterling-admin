@@ -176,6 +176,8 @@ export function NewsWorkspace({
   const [livePreview, setLivePreview] = useState<NewsCandidate | null>(null);
   const [livePreviewLoading, setLivePreviewLoading] = useState(true);
   const [selectionSource, setSelectionSource] = useState<NewsSelectionSource>("none");
+  const [articleEditorOpen, setArticleEditorOpen] = useState(false);
+  const articleTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isEditing = !!draft;
   const previewStory = draft ?? (override ? {
@@ -197,6 +199,24 @@ export function NewsWorkspace({
       document.body.style.overflow = "";
     };
   }, []);
+
+  useEffect(() => {
+    if (!articleEditorOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setArticleEditorOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [articleEditorOpen]);
+
+  useEffect(() => {
+    if (!articleEditorOpen) return;
+    requestAnimationFrame(() => {
+      articleTextareaRef.current?.focus();
+    });
+  }, [articleEditorOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +300,7 @@ export function NewsWorkspace({
     setDraft(null);
     setError(null);
     setContentError(null);
+    setArticleEditorOpen(false);
   }
 
   function handleEditCurrent() {
@@ -334,6 +355,7 @@ export function NewsWorkspace({
       setOverride(result);
       setDraft(null);
       setReason("");
+      setArticleEditorOpen(false);
       setSelectionSource("override");
       onChanged(result, `Saved override for ${stateLabel}`);
     } catch (err) {
@@ -454,99 +476,114 @@ export function NewsWorkspace({
           {/* Left: editor / current story */}
           <main
             ref={editorRef}
-            className={`min-h-0 lg:border-r lg:border-zinc-800 ${
-              isEditing ? "flex flex-col overflow-hidden" : "overflow-y-auto border-b border-zinc-800 lg:border-b-0"
-            }`}
+            className="min-h-0 overflow-y-auto overscroll-contain border-b border-zinc-800 lg:border-b-0 lg:border-r lg:border-zinc-800"
           >
             {isEditing && draft ? (
-              <>
-                <div className="shrink-0 space-y-5 overflow-y-auto border-b border-zinc-800 p-4 sm:p-6 lg:p-8">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Editor</p>
-                    <h2 className="mt-1 text-2xl font-semibold text-zinc-50">
-                      {override ? "Update this override" : "Override auto selection"}
-                    </h2>
-                    <p className="mt-2 text-sm text-zinc-400">
-                      Changes publish immediately to the mobile app for {stateLabel} on this date.
-                    </p>
-                  </div>
-
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-zinc-300">Headline</span>
-                    <input
-                      value={draft.title}
-                      onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-base text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
-                    />
-                  </label>
-
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-zinc-300">Map card preview</span>
-                    <p className="text-xs text-zinc-500">Short text shown on the map overlay before users tap Read more.</p>
-                    <textarea
-                      value={draft.description ?? ""}
-                      onChange={(e) => setDraft({ ...draft, description: e.target.value || null })}
-                      rows={3}
-                      className="w-full resize-y rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
-                    />
-                  </label>
-
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-zinc-300">Internal note (optional)</span>
-                    <input
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      placeholder="Why are you overriding today's pick?"
-                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
-                    />
-                  </label>
-
-                  {draft.article_url ? (
-                    <p className="text-xs text-zinc-500 break-all">
-                      Source:{" "}
-                      <a href={draft.article_url} target="_blank" rel="noreferrer" className="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline">
-                        {draft.article_url}
-                      </a>
-                    </p>
-                  ) : null}
-
-                  {error ? (
-                    <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
-                  ) : null}
+              <div className="space-y-5 p-4 sm:p-6 lg:p-8">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Editor</p>
+                  <h2 className="mt-1 text-2xl font-semibold text-zinc-50">
+                    {override ? "Update this override" : "Override auto selection"}
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    Changes publish immediately to the mobile app for {stateLabel} on this date.
+                  </p>
                 </div>
 
-                <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-6 lg:p-8">
-                  <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-zinc-300">Headline</span>
+                  <input
+                    value={draft.title}
+                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-base text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-zinc-300">Map card preview</span>
+                  <p className="text-xs text-zinc-500">Short text shown on the map overlay before users tap Read more.</p>
+                  <textarea
+                    value={draft.description ?? ""}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value || null })}
+                    rows={3}
+                    className="w-full resize-y rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <span className="text-sm font-medium text-zinc-300">Full article</span>
                       <p className="text-xs text-zinc-500">
-                        Body text on the in-app news page — preview updates on the right as you type.
+                        Body text on the in-app news page — preview updates on the right.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleLoadFullContent}
-                      disabled={contentLoading || !draft.article_url}
-                      className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 disabled:opacity-40"
-                    >
-                      {contentLoading ? "Loading from URL…" : "Load from source URL"}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      {draft.article_url ? (
+                        <button
+                          type="button"
+                          onClick={handleLoadFullContent}
+                          disabled={contentLoading}
+                          className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 disabled:opacity-40"
+                        >
+                          {contentLoading ? "Loading…" : "Load from URL"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setArticleEditorOpen(true)}
+                        className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/25"
+                      >
+                        Edit full screen
+                      </button>
+                    </div>
                   </div>
-                  {contentError ? <p className="mb-2 shrink-0 text-sm text-rose-400">{contentError}</p> : null}
-                  <textarea
-                    value={draft.content ?? ""}
-                    onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
-                    disabled={contentLoading}
-                    placeholder={
-                      contentLoading
-                        ? "Fetching the full article from the source URL…"
-                        : "Full article text — loaded automatically when NewsAPI only had a snippet."
-                    }
-                    className="min-h-[280px] w-full flex-1 resize-none rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-4 font-mono text-sm leading-7 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2 disabled:opacity-60 lg:min-h-0"
-                    spellCheck
-                  />
+
+                  {contentError ? <p className="mt-3 text-sm text-rose-400">{contentError}</p> : null}
+
+                  {contentLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
+                      Fetching full article from source URL…
+                    </div>
+                  ) : draft.content?.trim() ? (
+                    <p className="mt-4 line-clamp-6 text-sm leading-7 text-zinc-400 whitespace-pre-wrap">
+                      {draft.content}
+                    </p>
+                  ) : (
+                    <p className="mt-4 text-sm italic text-zinc-600">
+                      No article body yet — load from URL or open the full-screen editor to paste.
+                    </p>
+                  )}
+
+                  <p className="mt-3 text-xs text-zinc-600">
+                    {(draft.content ?? "").length.toLocaleString()} characters
+                  </p>
                 </div>
-              </>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-zinc-300">Internal note (optional)</span>
+                  <input
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Why are you overriding today's pick?"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
+                  />
+                </label>
+
+                {draft.article_url ? (
+                  <p className="text-xs text-zinc-500 break-all">
+                    Source:{" "}
+                    <a href={draft.article_url} target="_blank" rel="noreferrer" className="text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline">
+                      {draft.article_url}
+                    </a>
+                  </p>
+                ) : null}
+
+                {error ? (
+                  <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{error}</div>
+                ) : null}
+              </div>
             ) : (
               <div className="space-y-6 p-4 sm:p-6 lg:p-8">
                 {livePreviewLoading ? (
@@ -708,6 +745,76 @@ export function NewsWorkspace({
             </button>
           </div>
         </footer>
+      ) : null}
+
+      {/* Full-screen article editor */}
+      {articleEditorOpen && draft ? (
+        <div className="fixed inset-0 z-[110] flex flex-col bg-zinc-950">
+          <header className="shrink-0 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur-md">
+            <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+              <button
+                type="button"
+                onClick={() => setArticleEditorOpen(false)}
+                className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path fillRule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clipRule="evenodd" />
+                </svg>
+                Done
+              </button>
+
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-zinc-100">Full article</p>
+                <p className="truncate text-xs text-zinc-500">{draft.title}</p>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                {draft.article_url ? (
+                  <button
+                    type="button"
+                    onClick={handleLoadFullContent}
+                    disabled={contentLoading}
+                    className="hidden rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 disabled:opacity-40 sm:inline-flex"
+                  >
+                    {contentLoading ? "Loading…" : "Load from URL"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || !draft.title.trim() || !draft.article_url}
+                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {contentError ? (
+            <div className="shrink-0 border-b border-rose-500/20 bg-rose-500/10 px-4 py-2 text-sm text-rose-300 sm:px-6">
+              {contentError}
+            </div>
+          ) : null}
+
+          <textarea
+            ref={articleTextareaRef}
+            value={draft.content ?? ""}
+            onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
+            disabled={contentLoading}
+            placeholder={
+              contentLoading
+                ? "Fetching the full article from the source URL…"
+                : "Paste or edit the full article text here…"
+            }
+            className="min-h-0 w-full flex-1 resize-none border-0 bg-zinc-950 px-4 py-4 font-mono text-sm leading-7 text-zinc-50 outline-none placeholder:text-zinc-600 disabled:opacity-60 sm:px-6 sm:text-[15px] sm:leading-8"
+            spellCheck
+          />
+
+          <footer className="shrink-0 border-t border-zinc-800 bg-zinc-900/80 px-4 py-2 text-xs text-zinc-500 sm:px-6">
+            {(draft.content ?? "").length.toLocaleString()} characters · Esc to close · Preview updates when you tap Done
+          </footer>
+        </div>
       ) : null}
     </div>
   );
