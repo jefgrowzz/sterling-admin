@@ -4,27 +4,27 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   fetchMarkets,
   fetchOverridesForDate,
-  fetchAutoArticle,
+  fetchResolvedNews,
   fetchCandidates,
   saveOverride,
   clearOverride,
   addMarket,
+  deleteMarket,
   type Market,
   type NewsOverride,
   type NewsCandidate,
+  type NewsSelectionSource,
 } from "./actions";
+import { marketLabel } from "./state-labels";
 import { getTodayUtcDate, getTomorrowUtcDate } from "./date";
+import { AppNewsPreview } from "./AppNewsPreview";
 
 function norm(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function marketKey(m: { city: string; state: string | null }): string {
-  return `${norm(m.city)}|${norm(m.state)}`;
-}
-
-function marketLabel(m: { city: string; state: string | null }): string {
-  return m.state ? `${m.city}, ${m.state}` : m.city;
+function marketKey(m: { state: string | null }): string {
+  return norm(m.state);
 }
 
 function timeAgo(dateStr: string): string {
@@ -89,11 +89,15 @@ function MarketRow({
   override,
   dateUtc,
   onManage,
+  onDelete,
+  deleting,
 }: {
   market: Market;
   override: NewsOverride | null;
   dateUtc: string;
   onManage: () => void;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   const hasOverride = !!override;
   const [autoPreview, setAutoPreview] = useState<NewsCandidate | null>(null);
@@ -105,9 +109,9 @@ function MarketRow({
     let cancelled = false;
     setAutoLoading(true);
     setAutoError(false);
-    fetchAutoArticle({ city: market.city, state: market.state, dateUtc })
-      .then((article) => {
-        if (!cancelled) setAutoPreview(article);
+    fetchResolvedNews({ state: market.state, dateUtc })
+      .then((resolved) => {
+        if (!cancelled) setAutoPreview(resolved.selectedArticle);
       })
       .catch(() => {
         if (!cancelled) setAutoError(true);
@@ -119,7 +123,7 @@ function MarketRow({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasOverride, market.city, market.state, dateUtc]);
+  }, [hasOverride, market.state, dateUtc]);
 
   return (
     <div
@@ -130,7 +134,7 @@ function MarketRow({
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <p className="font-semibold text-zinc-50">{marketLabel(market)}</p>
+            <p className="font-semibold text-zinc-50">{marketLabel(market.state)}</p>
             <span className="text-[11px] text-zinc-500">
               {market.requestCount} request{market.requestCount !== 1 ? "s" : ""} · last {timeAgo(market.lastRequestedAt)}
             </span>
@@ -144,7 +148,7 @@ function MarketRow({
           ) : autoPreview ? (
             <p className="mt-1 line-clamp-1 text-sm text-zinc-400">{autoPreview.title}</p>
           ) : (
-            <p className="mt-1 text-sm italic text-zinc-500">No override — using auto selection</p>
+            <p className="mt-1 text-sm italic text-zinc-500">No story resolved yet for this date</p>
           )}
         </div>
         <OverrideBadge hasOverride={hasOverride} />
@@ -153,6 +157,14 @@ function MarketRow({
           className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
         >
           Manage
+        </button>
+        <button
+          onClick={onDelete}
+          disabled={deleting}
+          title="Remove market"
+          className="shrink-0 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {deleting ? "Removing…" : "Delete"}
         </button>
       </div>
     </div>
@@ -243,6 +255,26 @@ function CandidateCard({
   );
 }
 
+function toPreviewStory(
+  row: {
+    title: string;
+    description: string | null;
+    source?: string | null;
+    image_url?: string | null;
+    article_url?: string | null;
+    published_at?: string | null;
+  },
+): Parameters<typeof AppNewsPreview>[0]["story"] {
+  return {
+    title: row.title,
+    description: row.description,
+    source: row.source,
+    image_url: row.image_url,
+    article_url: row.article_url ?? null,
+    published_at: row.published_at,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Manage panel (slide-over) — view/save/clear the override for one market+date
 // ---------------------------------------------------------------------------
@@ -268,27 +300,59 @@ function ManagePanel({
   const [selected, setSelected] = useState<NewsCandidate | null>(null);
 
   const [livePreview, setLivePreview] = useState<NewsCandidate | null>(null);
-  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(true);
+  const [selectionSource, setSelectionSource] = useState<NewsSelectionSource>("none");
+
+  const effectiveStory = override
+    ? {
+        title: override.title,
+        description: override.description,
+        source: override.source,
+        image_url: override.image_url,
+        article_url: override.article_url,
+        published_at: override.published_at,
+      }
+    : livePreview;
 
   useEffect(() => {
-    if (override) return;
     let cancelled = false;
     setLivePreviewLoading(true);
-    fetchAutoArticle({ city: market.city, state: market.state, dateUtc })
-      .then((article) => {
-        if (!cancelled) setLivePreview(article);
+    setCandidatesLoading(true);
+    setCandidatesError(null);
+
+    fetchResolvedNews({ state: market.state, dateUtc })
+      .then(async (resolved) => {
+        if (cancelled) return;
+        if (!override) {
+          setLivePreview(resolved.selectedArticle);
+          setSelectionSource(resolved.selectionSource);
+        }
+        if (resolved.candidates.length > 0) {
+          setCandidates(resolved.candidates);
+          return;
+        }
+        const fresh = await fetchCandidates({ state: market.state, dateUtc });
+        if (!cancelled) setCandidates(fresh);
       })
-      .catch(() => {
-        if (!cancelled) setLivePreview(null);
+      .catch((err) => {
+        if (!cancelled) {
+          setCandidatesError(err instanceof Error ? err.message : "Failed to load live story");
+          setLivePreview(null);
+          setSelectionSource("none");
+        }
       })
       .finally(() => {
-        if (!cancelled) setLivePreviewLoading(false);
+        if (!cancelled) {
+          setLivePreviewLoading(false);
+          setCandidatesLoading(false);
+        }
       });
+
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [override, market.city, market.state, dateUtc]);
+  }, [override, market.state, dateUtc]);
 
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -298,16 +362,32 @@ function ManagePanel({
   async function handleFetchCandidates() {
     setCandidatesLoading(true);
     setCandidatesError(null);
-    setCandidates([]);
-    setSelected(null);
     try {
-      const result = await fetchCandidates({ city: market.city, state: market.state });
+      const result = await fetchCandidates({ state: market.state, dateUtc });
       setCandidates(result);
     } catch (err) {
       setCandidatesError(err instanceof Error ? err.message : "Failed to fetch candidate stories");
     } finally {
       setCandidatesLoading(false);
     }
+  }
+
+  function handleEditCurrentStory() {
+    const story = override
+      ? {
+          article_id: override.article_id,
+          article_url: override.article_url ?? "",
+          title: override.title,
+          description: override.description,
+          content: override.content,
+          source: override.source,
+          image_url: override.image_url,
+          published_at: override.published_at,
+        }
+      : livePreview;
+    if (!story?.article_url) return;
+    setSelected(story);
+    setError(null);
   }
 
   async function handleSave() {
@@ -317,16 +397,15 @@ function ManagePanel({
     try {
       const result = await saveOverride({
         dateUtc,
-        city: market.city,
         state: market.state,
         candidate: selected,
         reason,
       });
       setOverride(result);
       setSelected(null);
-      setCandidates([]);
       setReason("");
-      onChanged(result, `Saved override for ${marketLabel(market)}`);
+      setSelectionSource("override");
+      onChanged(result, `Saved override for ${marketLabel(market.state)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save override");
     } finally {
@@ -338,9 +417,9 @@ function ManagePanel({
     setClearing(true);
     setError(null);
     try {
-      await clearOverride({ dateUtc, city: market.city, state: market.state });
+      await clearOverride({ dateUtc, state: market.state });
       setOverride(null);
-      onChanged(null, `Cleared override for ${marketLabel(market)} — back to auto selection`);
+      onChanged(null, `Cleared override for ${marketLabel(market.state)} — back to auto selection`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clear override");
     } finally {
@@ -354,7 +433,7 @@ function ManagePanel({
       <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col overflow-hidden bg-zinc-900 shadow-2xl">
         <div className="flex items-start justify-between border-b border-zinc-800 px-6 py-5">
           <div>
-            <h2 className="text-base font-semibold text-zinc-50">{marketLabel(market)}</h2>
+            <h2 className="text-base font-semibold text-zinc-50">{marketLabel(market.state)}</h2>
             <p className="mt-0.5 text-sm text-zinc-500">{formatDate(dateUtc)}</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300">
@@ -371,61 +450,95 @@ function ManagePanel({
           </div>
 
           {override ? (
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-              <div className="flex gap-4">
-                {override.image_url ? (
-                  <img src={override.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-zinc-700 object-cover" />
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-zinc-50">{override.title}</p>
-                  {override.description && (
-                    <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{override.description}</p>
-                  )}
-                  <div className="mt-1.5 flex items-center gap-2 text-[11px] text-zinc-500">
-                    {override.source && <span>{override.source}</span>}
-                    {override.reason && (
-                      <>
-                        <span>·</span>
-                        <span>Reason: {override.reason}</span>
-                      </>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <div className="flex gap-4">
+                  {override.image_url ? (
+                    <img src={override.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-zinc-700 object-cover" />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-zinc-50">{override.title}</p>
+                    {override.description && (
+                      <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{override.description}</p>
                     )}
+                    <div className="mt-1.5 flex items-center gap-2 text-[11px] text-zinc-500">
+                      {override.source && <span>{override.source}</span>}
+                      {override.reason && (
+                        <>
+                          <span>·</span>
+                          <span>Reason: {override.reason}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <button
+                      onClick={handleEditCurrentStory}
+                      className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-800"
+                    >
+                      Edit story
+                    </button>
+                    <button
+                      onClick={handleClear}
+                      disabled={clearing}
+                      className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:opacity-40"
+                    >
+                      {clearing ? "Clearing…" : "Clear override"}
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={handleClear}
-                  disabled={clearing}
-                  className="h-fit shrink-0 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/20 disabled:opacity-40"
-                >
-                  {clearing ? "Clearing…" : "Clear override"}
-                </button>
               </div>
+              <AppNewsPreview
+                story={toPreviewStory({
+                  title: override.title,
+                  description: override.description,
+                  source: override.source,
+                  image_url: override.image_url,
+                  article_url: override.article_url,
+                  published_at: override.published_at,
+                })}
+                stateLabel={marketLabel(market.state)}
+              />
             </div>
           ) : livePreviewLoading ? (
             <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
               Loading live story…
             </div>
           ) : livePreview ? (
-            <div className="rounded-2xl border border-zinc-700 bg-zinc-800/60 p-4">
-              <div className="flex gap-4">
-                {livePreview.image_url ? (
-                  <img src={livePreview.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-zinc-700 object-cover" />
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-zinc-50">{livePreview.title}</p>
-                  {livePreview.description && (
-                    <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{livePreview.description}</p>
-                  )}
-                  <div className="mt-1.5 flex items-center gap-2 text-[11px] text-zinc-500">
-                    {livePreview.source && <span>{livePreview.source}</span>}
-                    <span>·</span>
-                    <span>Auto-selected — mobile app is using this now</span>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-zinc-700 bg-zinc-800/60 p-4">
+                <div className="flex gap-4">
+                  {livePreview.image_url ? (
+                    <img src={livePreview.image_url} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-zinc-700 object-cover" />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-zinc-50">{livePreview.title}</p>
+                    {livePreview.description && (
+                      <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{livePreview.description}</p>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-2 text-[11px] text-zinc-500">
+                      {livePreview.source && <span>{livePreview.source}</span>}
+                      <span>·</span>
+                      <span>
+                        {selectionSource === "auto"
+                          ? "Auto-selected — same story the mobile app serves"
+                          : "Live story for this date"}
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    onClick={handleEditCurrentStory}
+                    className="h-fit shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20"
+                  >
+                    Edit / override
+                  </button>
                 </div>
               </div>
+              <AppNewsPreview story={toPreviewStory(livePreview)} stateLabel={marketLabel(market.state)} />
             </div>
           ) : (
             <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
-              No override set — mobile app is using auto-selected news
+              No story resolved for this state and date yet
             </div>
           )}
 
@@ -447,7 +560,7 @@ function ManagePanel({
               <div className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{candidatesError}</div>
             ) : candidates.length === 0 ? (
               <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-800/60 text-sm text-zinc-500">
-                No candidates fetched yet
+                No candidate stories available — try refreshing
               </div>
             ) : (
               candidates.map((c, i) => (
@@ -455,7 +568,7 @@ function ManagePanel({
                   key={c.article_id ?? c.article_url ?? i}
                   candidate={c}
                   selected={selected?.article_url === c.article_url}
-                  isCurrent={!!override && override.article_url === c.article_url}
+                  isCurrent={!!effectiveStory?.article_url && effectiveStory.article_url === c.article_url}
                   onSelect={() => setSelected(c)}
                 />
               ))
@@ -463,7 +576,28 @@ function ManagePanel({
           </div>
 
           {selected && (
-            <div className="mt-4 space-y-3 border-t border-zinc-800 pt-4">
+            <div className="mt-4 space-y-4 border-t border-zinc-800 pt-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                {override ? "Edit override" : "Override auto selection"}
+              </h4>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-zinc-400">Title</span>
+                <input
+                  value={selected.title}
+                  onChange={(e) => setSelected({ ...selected, title: e.target.value })}
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-zinc-400">Description</span>
+                <textarea
+                  value={selected.description ?? ""}
+                  onChange={(e) => setSelected({ ...selected, description: e.target.value || null })}
+                  rows={4}
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none focus:border-emerald-500/50"
+                />
+              </label>
+              <AppNewsPreview story={toPreviewStory(selected)} stateLabel={marketLabel(market.state)} compact />
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-zinc-400">Reason (optional)</span>
                 <input
@@ -475,10 +609,10 @@ function ManagePanel({
               </label>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || !selected.title.trim() || !selected.article_url}
                 className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:opacity-40"
               >
-                {saving ? "Saving…" : "Save as override"}
+                {saving ? "Saving…" : override ? "Save changes" : "Save as override"}
               </button>
             </div>
           )}
@@ -502,20 +636,19 @@ function ManagePanel({
 // Add market
 // ---------------------------------------------------------------------------
 
-function AddMarketForm({ onAdd, onCancel }: { onAdd: (city: string, state: string | null) => Promise<void>; onCancel: () => void }) {
-  const [city, setCity] = useState("");
+function AddMarketForm({ onAdd, onCancel }: { onAdd: (state: string) => Promise<void>; onCancel: () => void }) {
   const [state, setState] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleAdd() {
-    if (!city.trim()) return;
+    if (!state.trim()) return;
     setSubmitting(true);
     setError(null);
     try {
-      await onAdd(city.trim(), state.trim() || null);
+      await onAdd(state.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add market");
+      setError(err instanceof Error ? err.message : "Failed to add state");
     } finally {
       setSubmitting(false);
     }
@@ -524,27 +657,21 @@ function AddMarketForm({ onAdd, onCancel }: { onAdd: (city: string, state: strin
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-800/60 p-4">
       <p className="mb-3 text-xs text-zinc-500">
-        Markets normally appear here on their own once the app requests news for them. Only add one
+        States normally appear here on their own once the app requests news for them. Only add one
         manually if you need to set an override before real traffic arrives.
       </p>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          placeholder="City"
-          autoFocus
-          className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
-        />
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
         <input
           value={state}
           onChange={(e) => setState(e.target.value)}
-          placeholder="State (optional)"
+          placeholder="State (e.g. FL or Florida)"
+          autoFocus
           className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
         />
         <button
           type="button"
           onClick={handleAdd}
-          disabled={!city.trim() || submitting}
+          disabled={!state.trim() || submitting}
           className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/20 disabled:opacity-40"
         >
           {submitting ? "Adding…" : "Add"}
@@ -577,6 +704,7 @@ export default function NewsPage() {
   const [addingMarket, setAddingMarket] = useState(false);
   const [managing, setManaging] = useState<Market | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -598,7 +726,7 @@ export default function NewsPage() {
   const overrideByMarket = useMemo(() => {
     const map = new Map<string, NewsOverride>();
     for (const o of overrides) {
-      const key = marketKey({ city: o.city, state: o.state });
+      const key = marketKey({ state: o.state });
       // overrides is sorted updated_at desc, so the first hit per key is the latest.
       if (!map.has(key)) map.set(key, o);
     }
@@ -608,13 +736,13 @@ export default function NewsPage() {
   const filteredMarkets = useMemo(() => {
     const term = norm(search);
     if (!term) return markets;
-    return markets.filter((m) => norm(marketLabel(m)).includes(term));
+    return markets.filter((m) => norm(marketLabel(m.state)).includes(term) || norm(m.state).includes(term));
   }, [markets, search]);
 
   const overriddenCount = markets.filter((m) => overrideByMarket.has(marketKey(m))).length;
 
-  async function handleAddMarket(city: string, state: string | null) {
-    const market = await addMarket({ city, state });
+  async function handleAddMarket(state: string) {
+    const market = await addMarket({ state });
     setMarkets((prev) => {
       const key = marketKey(market);
       if (prev.some((m) => marketKey(m) === key)) return prev;
@@ -624,10 +752,27 @@ export default function NewsPage() {
     setManaging(market);
   }
 
+  async function handleDeleteMarket(market: Market) {
+    if (!confirm(`Remove ${marketLabel(market.state)} from the states list? This also deletes any saved override for it.`)) return;
+    const key = marketKey(market);
+    setDeletingKey(key);
+    try {
+      await deleteMarket({ state: market.state });
+      setMarkets((prev) => prev.filter((m) => marketKey(m) !== key));
+      setOverrides((prev) => prev.filter((o) => marketKey({ state: o.state }) !== key));
+      if (managing && marketKey(managing) === key) setManaging(null);
+      setToast(`Removed ${marketLabel(market.state)}`);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Failed to remove market");
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
   function handleOverrideChanged(market: Market, override: NewsOverride | null, message: string) {
     setOverrides((prev) => {
       const key = marketKey(market);
-      const withoutThis = prev.filter((o) => marketKey({ city: o.city, state: o.state }) !== key);
+      const withoutThis = prev.filter((o) => marketKey({ state: o.state }) !== key);
       return override ? [override, ...withoutThis] : withoutThis;
     });
     setToast(message);
@@ -640,9 +785,9 @@ export default function NewsPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-400">News</p>
         <h2 className="mt-2 text-2xl font-semibold text-zinc-50">News of the Day</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-          Every market the app has requested news for, with the story currently going out on the
-          selected date. Markets appear here automatically from real traffic. The mobile app checks
-          for a manual override first and falls back to auto-selection when none is set.
+          Every state the app has requested news for, with the story currently going out on the
+          selected date. Auto-selected stories use the same resolver as the mobile app — open
+          Manage to preview, edit, or override them.
         </p>
 
         <div className="mt-5 grid grid-cols-3 gap-2 border-t border-zinc-800 pt-5 sm:max-w-md">
@@ -678,7 +823,7 @@ export default function NewsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by city or state"
+              placeholder="Filter by state"
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-600 focus:border-emerald-500/50"
             />
           </label>
@@ -723,6 +868,8 @@ export default function NewsPage() {
                 override={overrideByMarket.get(marketKey(market)) ?? null}
                 dateUtc={dateUtc}
                 onManage={() => setManaging(market)}
+                onDelete={() => handleDeleteMarket(market)}
+                deleting={deletingKey === marketKey(market)}
               />
             ))
           )}

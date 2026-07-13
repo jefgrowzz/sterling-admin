@@ -8,27 +8,20 @@ import {
 } from "@/app/dashboard/news/actions";
 import { getTodayUtcDate } from "@/app/dashboard/news/date";
 
-// Service-role-only admin endpoints backing the News tab. getCurrentAdmin() redirects
-// unauthenticated/non-staff callers, which for a route handler surfaces as a 307 to
-// "/" rather than a JSON error — acceptable here since this is only ever called from
-// the authenticated dashboard UI, not a public API surface.
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const city = searchParams.get("city");
   const state = searchParams.get("state");
   const date = searchParams.get("date");
 
-  if (!city) {
-    return NextResponse.json({ error: "city is required" }, { status: 400 });
+  if (!state) {
+    return NextResponse.json({ error: "state is required" }, { status: 400 });
   }
 
   await getCurrentAdmin();
 
   try {
     const override = await fetchOverride({
-      city,
-      state: state || null,
+      state,
       dateUtc: date || getTodayUtcDate(),
     });
     return NextResponse.json({ override });
@@ -41,11 +34,11 @@ export async function PUT(req: NextRequest) {
   await getCurrentAdmin();
 
   const body = await req.json();
-  const { date_utc, city, state, reason, ...candidateFields } = body ?? {};
+  const { date_utc, state, reason, ...candidateFields } = body ?? {};
 
-  if (!date_utc || !city || !candidateFields.title || !candidateFields.article_url) {
+  if (!date_utc || !state || !candidateFields.title || !candidateFields.article_url) {
     return NextResponse.json(
-      { error: "date_utc, city, title, and article_url are required" },
+      { error: "date_utc, state, title, and article_url are required" },
       { status: 400 }
     );
   }
@@ -62,7 +55,7 @@ export async function PUT(req: NextRequest) {
   };
 
   try {
-    const override = await saveOverride({ dateUtc: date_utc, city, state, candidate, reason });
+    const override = await saveOverride({ dateUtc: date_utc, state, candidate, reason });
     return NextResponse.json({ override });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to save override" }, { status: 500 });
@@ -73,16 +66,15 @@ export async function DELETE(req: NextRequest) {
   await getCurrentAdmin();
 
   const { searchParams } = new URL(req.url);
-  const city = searchParams.get("city");
   const state = searchParams.get("state");
   const date = searchParams.get("date");
 
-  if (!city || !date) {
-    return NextResponse.json({ error: "city and date are required" }, { status: 400 });
+  if (!state || !date) {
+    return NextResponse.json({ error: "state and date are required" }, { status: 400 });
   }
 
   try {
-    await clearOverride({ dateUtc: date, city, state: state || null });
+    await clearOverride({ dateUtc: date, state });
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to clear override" }, { status: 500 });

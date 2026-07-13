@@ -16,12 +16,25 @@ function isStaffRole(role: string | null | undefined): role is StaffRole {
   return !!role && (STAFF_ROLES as readonly string[]).includes(role);
 }
 
+function isAuthApiError(error: unknown): boolean {
+  return !!error && typeof error === "object" && "__isAuthError" in error;
+}
+
 // Real authorization check: verifies the session with Supabase Auth, then
 // looks up account_role. Call this from every dashboard entry point (layout,
 // pages) rather than relying on the optimistic check in proxy.ts alone.
 export async function getCurrentAdmin(): Promise<CurrentAdmin> {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+
+  // getUser() throws (rather than returning a null user) when the refresh
+  // token cookie is stale/revoked, e.g. after a password reset or a
+  // long-idle session. Treat that the same as "not signed in".
+  let user = null;
+  try {
+    ({ data: { user } } = await supabase.auth.getUser());
+  } catch (error) {
+    if (!isAuthApiError(error)) throw error;
+  }
 
   if (!user) redirect("/");
 
