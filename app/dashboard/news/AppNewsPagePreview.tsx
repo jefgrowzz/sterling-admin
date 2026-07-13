@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { parseArticleContent } from "@/lib/news/articleContentParser";
+import { parseStoredArticleContent } from "@/lib/news/articleContentStorage";
 import { FormattedArticleBody } from "./FormattedArticleBody";
 import type { AppNewsPreviewStory } from "./AppNewsPreview";
 
@@ -31,8 +31,8 @@ export function AppNewsPagePreview({
   loading = false,
 }: AppNewsPagePreviewProps) {
   const blocks = useMemo(
-    () => parseArticleContent({ text: bodyText?.trim() || null }),
-    [bodyText],
+    () => parseStoredArticleContent(bodyText, story.title),
+    [bodyText, story.title],
   );
 
   const publishedLabel = formatPublishedAge(story.published_at);

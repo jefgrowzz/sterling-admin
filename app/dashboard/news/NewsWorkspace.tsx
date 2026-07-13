@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchResolvedNews,
   fetchCandidates,
@@ -15,7 +15,9 @@ import {
 import { marketLabel } from "./state-labels";
 import { AppNewsPreview } from "./AppNewsPreview";
 import { AppNewsPagePreview } from "./AppNewsPagePreview";
+import { FormattedArticleBody } from "./FormattedArticleBody";
 import { isNewsApiTruncatedContent, sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
+import { parseStoredArticleContent } from "@/lib/news/articleContentStorage";
 
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -400,6 +402,11 @@ export function NewsWorkspace({
       override?.content ?? livePreview?.content ?? null,
       previewStory?.title,
     );
+
+  const articlePreviewBlocks = useMemo(
+    () => parseStoredArticleContent(draft?.content ?? null, draft?.title),
+    [draft?.content, draft?.title],
+  );
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-zinc-950">
@@ -797,22 +804,53 @@ export function NewsWorkspace({
             </div>
           ) : null}
 
-          <textarea
-            ref={articleTextareaRef}
-            value={draft.content ?? ""}
-            onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
-            disabled={contentLoading}
-            placeholder={
-              contentLoading
-                ? "Fetching the full article from the source URL…"
-                : "Paste or edit the full article text here…"
-            }
-            className="min-h-0 w-full flex-1 resize-none border-0 bg-zinc-950 px-4 py-4 font-mono text-sm leading-7 text-zinc-50 outline-none placeholder:text-zinc-600 disabled:opacity-60 sm:px-6 sm:text-[15px] sm:leading-8"
-            spellCheck
-          />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-2">
+            <div className="flex min-h-0 flex-1 flex-col border-b border-zinc-800 lg:border-b-0 lg:border-r">
+              <div className="shrink-0 border-b border-zinc-800 px-4 py-2 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Source text</p>
+                <p className="text-[11px] text-zinc-600">
+                  Paragraphs separated by blank lines. Use ## for headings, - for bullets.
+                </p>
+              </div>
+              <textarea
+                ref={articleTextareaRef}
+                value={draft.content ?? ""}
+                onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
+                disabled={contentLoading}
+                placeholder={
+                  contentLoading
+                    ? "Fetching the full article from the source URL…"
+                    : "Article text with paragraph breaks…"
+                }
+                className="min-h-[40vh] w-full flex-1 resize-none border-0 bg-zinc-950 px-4 py-4 font-mono text-sm leading-7 text-zinc-50 outline-none placeholder:text-zinc-600 disabled:opacity-60 sm:px-6 lg:min-h-0"
+                spellCheck
+              />
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0A0A0A]">
+              <div className="shrink-0 border-b border-white/10 px-4 py-2 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">App preview</p>
+                <p className="text-[11px] text-zinc-600">How this renders in the mobile news page.</p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+                {contentLoading ? (
+                  <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-sky-400" />
+                    Loading full article…
+                  </div>
+                ) : articlePreviewBlocks.length > 0 ? (
+                  <FormattedArticleBody blocks={articlePreviewBlocks} />
+                ) : (
+                  <p className="py-8 text-sm italic text-slate-500">
+                    Formatted preview will appear here as you add content.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
 
           <footer className="shrink-0 border-t border-zinc-800 bg-zinc-900/80 px-4 py-2 text-xs text-zinc-500 sm:px-6">
-            {(draft.content ?? "").length.toLocaleString()} characters · Esc to close · Preview updates when you tap Done
+            {(draft.content ?? "").length.toLocaleString()} characters · {articlePreviewBlocks.length} blocks · Esc to close
           </footer>
         </div>
       ) : null}

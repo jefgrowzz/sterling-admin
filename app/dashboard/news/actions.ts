@@ -3,7 +3,8 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "@/app/dashboard/lib/dal";
 import { logAdminAction } from "@/app/dashboard/lib/audit-log";
-import { cleanArticleText, sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
+import { sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
+import { buildStoredArticleContent } from "@/lib/news/articleContentStorage";
 import { normalizeStateAbbreviation, marketLabel } from "./state-labels";
 
 export type NewsOverride = {
@@ -381,6 +382,7 @@ export async function fetchFullArticlePreview(params: {
   }
 
   const payload = data as {
+    html?: string | null;
     text?: string | null;
     markdown?: string | null;
     source?: string | null;
@@ -391,26 +393,20 @@ export async function fetchFullArticlePreview(params: {
     return { text: null, source: null, error: payload.error };
   }
 
-  const rawText = typeof payload.text === "string" && payload.text.trim()
-    ? payload.text
-    : typeof payload.markdown === "string"
-      ? payload.markdown
-      : null;
+  const text = buildStoredArticleContent(
+    {
+      html: payload.html,
+      markdown: payload.markdown,
+      text: payload.text,
+    },
+    { title: title || undefined },
+  );
 
-  if (!rawText?.trim()) {
+  if (!text?.trim()) {
     return {
       text: null,
       source: payload.source ?? null,
       error: "Could not extract article body. Deploy article-reader or open the original link.",
-    };
-  }
-
-  const text = cleanArticleText(rawText, { title: title || undefined });
-  if (!text.trim()) {
-    return {
-      text: null,
-      source: payload.source ?? null,
-      error: "Article text was empty after cleanup.",
     };
   }
 
