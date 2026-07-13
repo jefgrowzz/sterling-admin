@@ -3,7 +3,7 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getCurrentAdmin } from "@/app/dashboard/lib/dal";
 import { logAdminAction } from "@/app/dashboard/lib/audit-log";
-import { cleanArticleText } from "@/lib/news/articleTextCleanup";
+import { cleanArticleText, sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
 import { normalizeStateAbbreviation, marketLabel } from "./state-labels";
 
 export type NewsOverride = {
@@ -37,12 +37,13 @@ export type NewsCandidate = {
 };
 
 function normalizeCandidate(raw: any): NewsCandidate {
+  const title = String(raw.title ?? "");
   return {
     article_id: raw.article_id ?? raw.id ?? null,
     article_url: raw.article_url ?? raw.url ?? "",
-    title: raw.title ?? "",
+    title,
     description: raw.description ?? raw.summary ?? null,
-    content: raw.content ?? null,
+    content: sanitizeStoredArticleContent(raw.content ? String(raw.content) : null, title),
     source: raw.source ?? raw.source_name ?? raw.publisher ?? null,
     image_url: raw.image_url ?? raw.image ?? raw.urlToImage ?? null,
     published_at: raw.published_at ?? raw.publishedAt ?? null,
@@ -431,6 +432,17 @@ export async function saveOverride(params: {
   if (!state) throw new Error("State is required");
   const stateNorm = normalize(state);
 
+  let articleContent = sanitizeStoredArticleContent(params.candidate.content, params.candidate.title);
+  if (!articleContent && params.candidate.article_url) {
+    const scraped = await fetchFullArticlePreview({
+      url: params.candidate.article_url,
+      title: params.candidate.title,
+    });
+    if (scraped.text) {
+      articleContent = scraped.text;
+    }
+  }
+
   const payload = {
     date_utc: params.dateUtc,
     city: null,
@@ -439,7 +451,7 @@ export async function saveOverride(params: {
     article_url: params.candidate.article_url,
     title: params.candidate.title,
     description: params.candidate.description,
-    content: params.candidate.content,
+    content: articleContent,
     source: params.candidate.source,
     image_url: params.candidate.image_url,
     published_at: params.candidate.published_at,

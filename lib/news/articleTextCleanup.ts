@@ -551,6 +551,27 @@ export function extractJinaMarkdown(raw: string, options?: { title?: string }): 
   return trimTrailingJunkLines(lines.slice(start)).join('\n').trim();
 }
 
+/** NewsAPI `content` ends with this when the full article was not returned. */
+export function isNewsApiTruncatedContent(text: string | null | undefined): boolean {
+  if (!text?.trim()) return false;
+  const trimmed = text.trim();
+  if (/\[\+\d+\s*chars\]/i.test(trimmed)) return true;
+  if (/^in the news release,/i.test(trimmed) && trimmed.length < 2_000) return true;
+  return false;
+}
+
+/** Full article body safe to store or render — null when only a NewsAPI snippet. */
+export function sanitizeStoredArticleContent(
+  raw: string | null | undefined,
+  title?: string | null,
+): string | null {
+  if (!raw?.trim() || isNewsApiTruncatedContent(raw)) return null;
+  const cleaned = cleanArticleText(raw, { title: title ?? undefined });
+  if (!cleaned || cleaned.length < 120) return null;
+  if (isNavChromeText(cleaned) || isSocialShareLine(cleaned)) return null;
+  return cleaned;
+}
+
 /** Clean NewsAPI description/content before showing a map preview. */
 export function cleanNewsPreviewText(
   raw: string | null | undefined,

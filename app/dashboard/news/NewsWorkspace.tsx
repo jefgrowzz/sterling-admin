@@ -14,6 +14,7 @@ import {
 } from "./actions";
 import { marketLabel } from "./state-labels";
 import { AppNewsPreview } from "./AppNewsPreview";
+import { isNewsApiTruncatedContent, sanitizeStoredArticleContent } from "@/lib/news/articleTextCleanup";
 
 function formatDate(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -62,7 +63,7 @@ function toEditableCandidate(story: {
     article_url: articleUrl,
     title: story.title.trim(),
     description: story.description ?? null,
-    content: story.content ?? null,
+    content: sanitizeStoredArticleContent(story.content, story.title.trim()),
     source: story.source ?? null,
     image_url: story.image_url ?? null,
     published_at: story.published_at ?? null,
@@ -235,18 +236,43 @@ export function NewsWorkspace({
     };
   }, [override, market.state, dateUtc]);
 
-  function beginEditing(story: Parameters<typeof toEditableCandidate>[0]) {
+  async function beginEditing(story: Parameters<typeof toEditableCandidate>[0]) {
     const editable = toEditableCandidate(story);
     if (!editable) {
       setError("This story is missing a title or URL and cannot be edited.");
       return;
     }
-    setDraft(editable);
     setError(null);
     setContentError(null);
+    setDraft(editable);
     requestAnimationFrame(() => {
       editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+
+    const needsFullBody =
+      !editable.content ||
+      isNewsApiTruncatedContent(story?.content ?? editable.content);
+    if (!needsFullBody || !editable.article_url) return;
+
+    setContentLoading(true);
+    try {
+      const result = await fetchFullArticlePreview({
+        url: editable.article_url,
+        title: editable.title,
+      });
+      if (result.error || !result.text) {
+        setContentError(
+          result.error ??
+            "Only a NewsAPI snippet was available. Use Load from source URL or paste the full article.",
+        );
+        return;
+      }
+      setDraft((current) => (current ? { ...current, content: result.text } : current));
+    } catch (err) {
+      setContentError(err instanceof Error ? err.message : "Failed to load full article");
+    } finally {
+      setContentLoading(false);
+    }
   }
 
   function cancelEditing() {
@@ -471,8 +497,13 @@ export function NewsWorkspace({
                       value={draft.content ?? ""}
                       onChange={(e) => setDraft({ ...draft, content: e.target.value || null })}
                       rows={14}
-                      placeholder="Paste article text or load it from the source URL…"
-                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 font-mono text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2"
+                      disabled={contentLoading}
+                      placeholder={
+                        contentLoading
+                          ? "Fetching the full article from the source URL…"
+                          : "Full article text — loaded automatically when NewsAPI only had a snippet."
+                      }
+                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 font-mono text-sm leading-6 text-zinc-50 outline-none ring-emerald-500/30 focus:border-emerald-500/50 focus:ring-2 disabled:opacity-60"
                     />
                     {contentError ? <p className="text-sm text-rose-400">{contentError}</p> : null}
                   </div>
